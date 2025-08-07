@@ -16,7 +16,7 @@ def check_password():
         password = st.text_input("Enter the app password:", type="password")
         if password in AUTHORIZED_PASSWORDS:
             st.session_state["authenticated"] = True
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.warning("Incorrect password")
             st.stop()
