@@ -1,5 +1,2 @@
 streamlit
 openai
-io
-csv
-os
