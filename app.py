@@ -4,6 +4,25 @@ from io import StringIO
 import csv
 import os
 
+
+AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
+
+def check_password():
+    """Simple password protection."""
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
+
+    if not st.session_state["authenticated"]:
+        password = st.text_input("Enter the app password:", type="password")
+        if password in AUTHORIZED_PASSWORDS:
+            st.session_state["authenticated"] = True
+            st.experimental_rerun()
+        else:
+            st.warning("Incorrect password")
+            st.stop()
+
+check_password()
+
 st.set_page_config(page_title="Inclusive Interviewer", page_icon="🧠", layout="centered")
 
 st.title("🎙️Interviewer and Storyteller📖")
