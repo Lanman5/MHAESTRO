@@ -8,7 +8,7 @@ st.set_page_config(page_title="Inclusive Interviewer", page_icon="🧠", layout=
 
 st.title("🎙️Interviewer and Storyteller📖")
 
-client = OpenAI()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 @st.cache_data
 def get_model_list():
