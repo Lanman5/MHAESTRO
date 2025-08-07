@@ -63,10 +63,10 @@ def read_file(input_file):
     
 def generate_transcript(messages, user_name="User"):
     transcript = ""
-    for msg in messages:#[1:]:
+    for msg in messages[1:]:
         if msg["role"] == "system":
-            #continue
-            role = "prompt"
+            continue
+            #role = "prompt"
         elif msg["role"] == "assistant":
             role = "Interviewer"
         else:
