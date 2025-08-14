@@ -117,15 +117,15 @@ Steering Prompt;"You are a storytelling expert analyzing an ongoing interview. Y
     - Respond ONLY with valid JSON. Do not include explanations, markdown, or natural language.
 
     }
-    "Moment": true/false,
-    "Backstory": true/false,
-    "Details": true/false,
-    "Understanding": true/false,
-    "Realisation": true/false,
-    "Change": true/false,
-    "Resolution": true/false
+    ""Moment"": true/false,
+    ""Backstory"": true/false,
+    ""Details"": true/false,
+    ""Understanding"": true/false,
+    ""Realisation"": true/false,
+    ""Change"": true/false,
+    ""Resolution"": true/false
     }"
-Safeguarding Prompt;"You are a safeguarding expert analysing an interview transcript. Monitor the given interview transcript and if you can see the interviewee is at any risk of harming themselves or others, output a JSON obect as a key (safeguarding_flag) with a value of true otherwise return the value as false if the interview is going well. Respond ONLY with a valid JSON object and do not include any explanations, markdowns or natural language in your response as shown below:
+Safeguarding Prompt;"You are a safeguarding expert analysing an interview transcript. Monitor the given interview transcript and if you can see the interviewee is at any risk of harming themselves or others, output a JSON object as a key (safeguarding_flag) with a value of true otherwise return the value as false if the interview is going well. Respond ONLY with a valid JSON object and do not include any explanations, markdowns or natural language in your response as shown below:
 }
-"safeguarding_flag" :true/false
+""safeguarding_flag"" :true/false
 }"
