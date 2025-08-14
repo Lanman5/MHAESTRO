@@ -3,7 +3,16 @@ from openai import OpenAI
 from io import StringIO
 import csv
 import os
+import re
+import json
+import logging 
+import streamlit.components.v1 as components
+from html import escape
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+)
 
 AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
 
@@ -94,7 +103,32 @@ def generate_transcript(messages, user_name="User"):
         content = msg["content"]
         transcript += f"{role}: {content}\n\n"
     return transcript
+def json_check(text):
+#attempts to get rid of any trailing context text returned by AI before json.
+    match = re.search(r"\{.*?\}", text, re.S)
+    if not match:
+        logging.warning("No JSON object found in model output.")
+        return {}
+    
+    json_str = match.group(0)
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        logging.warning(f"JSON decoding failed: {e}")
+        return {}
+    
+def analyze_story_stages(messages, analysis_model, analysis_prompt):
+    transcript = generate_transcript(messages)
 
+    response = client.chat.completions.create(
+        model=analysis_model,
+        messages=[
+            {"role": "system", "content": analysis_prompt},
+            {"role": "user", "content": "Carry out the analysis as specified in the framework above using this transcript:" +transcript}])
+
+    result = response.choices[0].message.content
+    logging.debug("Raw analysis result: %s", result)
+    return json_check(result)
 
 def read_csv():
     DEFAULT_FILE_PATH = "default_prompts.csv"
@@ -123,9 +157,9 @@ if not prompt_list:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "config_initialized" not in st.session_state:
-    if prompt_list and len(prompt_list) < 13:
+    if prompt_list and len(prompt_list) < 15:
 
-        st.error("Insufficient prompts in Default CSV configuration. Please ensure at least 13 entries.")
+        st.error("Insufficient prompts in Default CSV configuration. Please ensure at least 15 entries.")
         st.stop()
 
     init_file_data = []
@@ -163,7 +197,25 @@ if "config_initialized" not in st.session_state:
         "eyfs_init_prompt": prompt_list[9][1],
         "eyfs_story_files": [prompt_list[10][0],prompt_list[11][0],prompt_list[12][0]],
 
+        #assistant bots
+        "steering_prompt": prompt_list[13][1],
+        "safeguarding_prompt": prompt_list[14][1],
+
         "story_model_select": default_model,
+        "steering_model": default_model,
+        "safeguarding_model": default_model,
+
+        "story_stages":{
+        "Moment": False,
+        "Backstory": False,
+        "Details": False,
+        "Understanding": False,
+        "Realisation": False,
+        "Change": False,
+        "Resolution": False
+        },
+
+        "safeguarding_flag" : False,
 
         "config_initialized": True
     })
@@ -200,28 +252,89 @@ with tab1:
             {"role": "assistant", "content": interview_question}
         ]
 # ------------------- Chat Display -------------------
-    for msg in st.session_state.messages[1:]:
-        st.chat_message(msg["role"]).markdown(msg["content"])
+            inner = ""
+            for msg in st.session_state.messages[1:]:
+                if msg["role"] == "system":
+                    continue
+                role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+                content = escape(msg["content"]).replace("\n", "<br>")
+                inner += f"<p><strong>{role}:</strong><br>{content}</p><hr>"
+
+            chat_html = f"""
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+            <div id="chat-container" style="
+                height:400px; 
+                overflow-y:auto; 
+                padding:10px; 
+                font-family: 'Inter', sans-serif;
+                font-size: 14px;
+                line-height: 1.5;
+                background-color: #f9f9f9;
+                border-radius: 8px;
+            ">
+                {inner}
+            </div>
+            <script>
+                const el = document.getElementById('chat-container');
+                if (el) {{
+                    el.scrollTo({{ top: el.scrollHeight, behavior: 'smooth' }});
+                }}
+            </script>
+            """
+
+            # Render chat + auto-scroll
+            components.html(chat_html, height=420, scrolling=False)
 
     # ------------------- Chat Input -------------------
     if st.session_state.get("messages"):
         if prompt := st.chat_input("Type your reply..."):
-            st.chat_message("user").markdown(prompt)
             st.session_state.messages.append({"role": "user", "content": prompt})
 
+            all_vars_covered = True
+            steering_parts = []
+
             with st.spinner("Thinking..."):
-                try: 
+                new_analysis = analyze_story_stages(st.session_state.messages, st.session_state['steering_model'],st.session_state['steering_prompt'])
+                if new_analysis:
+                    st.session_state['story_stages'].update(new_analysis)
+                    missing = [s for s, covered in st.session_state['story_stages'].items() if not covered]
+                    if missing:
+                        all_vars_covered = False
+                        steering_parts.append(f"The following stages have not been meaningfully covered: {', '.join(missing)}.")
+                safeguarding_analysis = analyze_story_stages(st.session_state.messages, st.session_state['safeguarding_model'], st.session_state['safeguarding_prompt'])
+                if safeguarding_analysis:
+                    st.session_state['safeguarding_flag'] = safeguarding_analysis
+
+        # 3. combine all steering instructions
+        if st.session_state['safeguarding_flag'] is True:
+            steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. Please terminate the interview and advise them to seek help."
+        elif all_vars_covered:
+            steering_instruction = "All criteria have been covered. Please thank the interviewee and end the interview."
+        else:
+            steering_instruction = (" ".join(steering_parts) + " Focus your next question to guide the participant toward one of these missing stages, while still following the interview framework and maintaining empathy and depth.")
+            # 4. Send steering instruction to main interviewer
+            temp_messages = st.session_state.messages.copy()
+            if steering_instruction:  # Only add if we have bots
+                temp_messages.append({"role": "system", "content": steering_instruction})
+            logging.debug(temp_messages)
+
+            # 5. main interviewer generates the next question
+            with st.spinner("Thinking..."):
+                try:
                     response = client.chat.completions.create(
                         model=st.session_state["interviewer_model"],
-                        messages=st.session_state.messages,
-                        temperature=0.8
+                        messages=temp_messages,
                     )
                     reply = response.choices[0].message.content
                 except Exception as e:
-                    reply = "Sorry, there was an issue generating a response. Please try again later."
+                    reply = "Sorry, there was an issue generating a response."
                     st.error(f"Error: {e}")
-                st.chat_message("assistant").markdown(reply)
-                st.session_state.messages.append({"role": "assistant", "content": reply})
+
+            # 6. Append interviewer message
+            st.session_state.messages.append({"role": "assistant", "content": reply})
+
+            # 7. Refresh UI
+            st.rerun()
 
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
@@ -278,8 +391,8 @@ with tab1:
 
 with tab2:
     if 'analysis' not in st.session_state:
-     st.subheader("⚠️INTERVIEW NOT FOUND!", divider = "red")
-     st.markdown("#### *Please complete an interview in the preivous tab so it can be analysed for storytelling!*")
+        st.subheader("⚠️INTERVIEW NOT FOUND!", divider = "red")
+        st.markdown("#### *Please complete an interview in the preivous tab so it can be analysed for storytelling!*")
     else:
         st.title("📔Story Generation")
         story_option = st.selectbox(
@@ -420,7 +533,7 @@ with tab3:
 
 
 
-    tab1s, tab2s, tab3s = st.tabs(["🎤Interviewer Settings", "📈Analysis Settings"," 📑Storyteller Settings"])
+    tab1s, tab2s, tab3s, tab4s = st.tabs(["🎤Interviewer Settings","🤖Assistant Bot Settings", "📈Analysis Settings"," 📑Storyteller Settings"])
     if "titled_prereq_files" in st.session_state:
          prereq_titles = [f["title"] for f in st.session_state["titled_prereq_files"]]
     else:
@@ -440,8 +553,16 @@ with tab3:
             key="interview_selected_files"
         )
 
-       
     with tab2s:
+        st.subheader("Assistant Bot Settings")
+        with st.expander("Expand to view steering prompts:"):
+            steering_model = st.selectbox("Select a steering model", chat_models, key = "steering_model")
+            steering_prompt = st.text_area("Interview Steering Prompt:",key = "steering_prompt",height = 350)
+        with st.expander("Expand to view safeguarding prompt"):
+            steering_model = st.selectbox("Select a safeguarding model", chat_models, key = "safeguarding_model")
+            steering_prompt = st.text_area("Interview Safeguarding Prompt:",key = "safeguarding_prompt",height = 350)
+
+    with tab3s:
         st.subheader("Analysis Settings")
         with st.expander("Expand to edit Analysis prompts:"):
             analysis_system_prompt = st.text_area("Analysis System Configuration Prompt:", key = "analysis_system_prompt",height = 350 )
@@ -453,7 +574,7 @@ with tab3:
             key="analysis_selected_files"
         )
 
-    with tab3s:
+    with tab4s:
         st.subheader("Story Generation Settings")
         st.selectbox("Select a model for storytelling", chat_models, key="story_model_select")
 
