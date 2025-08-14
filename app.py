@@ -252,38 +252,39 @@ with tab1:
             {"role": "assistant", "content": interview_question}
         ]
 # ------------------- Chat Display -------------------
-            inner = ""
-            for msg in st.session_state.messages[1:]:
-                if msg["role"] == "system":
-                    continue
-                role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
-                content = escape(msg["content"]).replace("\n", "<br>")
-                inner += f"<p><strong>{role}:</strong><br>{content}</p><hr>"
+    if st.session_state.get("messages"):
+        inner = ""
+        for msg in st.session_state.messages[1:]:
+            if msg["role"] == "system":
+                continue
+            role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+            content = escape(msg["content"]).replace("\n", "<br>")
+            inner += f"<p><strong>{role}:</strong><br>{content}</p><hr>"
 
-            chat_html = f"""
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-            <div id="chat-container" style="
-                height:400px; 
-                overflow-y:auto; 
-                padding:10px; 
-                font-family: 'Inter', sans-serif;
-                font-size: 14px;
-                line-height: 1.5;
-                background-color: #f9f9f9;
-                border-radius: 8px;
-            ">
-                {inner}
-            </div>
-            <script>
-                const el = document.getElementById('chat-container');
-                if (el) {{
-                    el.scrollTo({{ top: el.scrollHeight, behavior: 'smooth' }});
-                }}
-            </script>
-            """
+        chat_html = f"""
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+        <div id="chat-container" style="
+            height:400px; 
+            overflow-y:auto; 
+            padding:10px; 
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        ">
+            {inner}
+        </div>
+        <script>
+            const el = document.getElementById('chat-container');
+            if (el) {{
+                el.scrollTo({{ top: el.scrollHeight, behavior: 'smooth' }});
+            }}
+        </script>
+        """
 
-            # Render chat + auto-scroll
-            components.html(chat_html, height=420, scrolling=False)
+        # Render chat + auto-scroll
+        components.html(chat_html, height=420, scrolling=False)
 
     # ------------------- Chat Input -------------------
     if st.session_state.get("messages"):
