@@ -305,13 +305,13 @@ with tab1:
                 if safeguarding_analysis:
                     st.session_state['safeguarding_flag'] = safeguarding_analysis
 
-        # 3. combine all steering instructions
-        if st.session_state['safeguarding_flag'] is True:
-            steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. Please terminate the interview and advise them to seek help."
-        elif all_vars_covered:
-            steering_instruction = "All criteria have been covered. Please thank the interviewee and end the interview."
-        else:
-            steering_instruction = (" ".join(steering_parts) + " Focus your next question to guide the participant toward one of these missing stages, while still following the interview framework and maintaining empathy and depth.")
+            # 3. combine all steering instructions
+            if st.session_state['safeguarding_flag'] is True:
+                steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. Please terminate the interview and advise them to seek help."
+            elif all_vars_covered:
+                steering_instruction = "All criteria have been covered. Please thank the interviewee and end the interview."
+            else:
+                steering_instruction = (" ".join(steering_parts) + " Focus your next question to guide the participant toward one of these missing stages, while still following the interview framework and maintaining empathy and depth.")
             # 4. Send steering instruction to main interviewer
             temp_messages = st.session_state.messages.copy()
             if steering_instruction:  # Only add if we have bots
