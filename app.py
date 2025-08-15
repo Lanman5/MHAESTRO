@@ -419,6 +419,13 @@ with tab2:
                     )
                     st.session_state['analysis'] = response.choices[0].message.content
                     st.success("Analysis Complete! - You can now generate your own story!")
+                    if 'analysis' in st.session_state:
+                        if st.button("📄 View Analysis"):
+                            st.session_state['view_analysis'] = True
+
+                        if st.session_state.get('view_analysis'):
+                            with st.spinner("Loading analysis..."):
+                                st.text_area("Analysis:", value=st.session_state['analysis'], height=300)
                 except Exception as e:
                     st.error("Analysis failed - please re-interview")
 
