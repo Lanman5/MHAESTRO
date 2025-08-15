@@ -207,9 +207,7 @@ if "config_initialized" not in st.session_state:
 
         "story_stages":{
         "Moment": False,
-        "Backstory": False,
         "Details": False,
-        "Understanding": False,
         "Realisation": False,
         "Change": False,
         "Resolution": False
@@ -308,7 +306,7 @@ with tab1:
 
             # 3. combine all steering instructions
             if st.session_state['safeguarding_flag'] is True:
-                steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. Please end the interview immediately and advise them to seek help, asking no follow up questions."
+                steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
             elif all_vars_covered:
                 steering_instruction = "All criteria have been covered. Please thank the interviewee and end the interview."
             else:
