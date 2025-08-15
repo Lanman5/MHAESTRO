@@ -302,8 +302,8 @@ with tab1:
                         steering_parts.append(f"The following stages have not been meaningfully covered: {', '.join(missing)}.")
                 safeguarding_analysis = analyze_story_stages(st.session_state.messages, st.session_state['safeguarding_model'], st.session_state['safeguarding_prompt'])
                 if safeguarding_analysis:
-                    logging.debug(safeguarding_analysis)
-                    st.session_state['safeguarding_flag'] = safeguarding_analysis
+                    st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
+
 
             # 3. combine all steering instructions
             if st.session_state['safeguarding_flag'] is True:
