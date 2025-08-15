@@ -392,7 +392,36 @@ with tab1:
 with tab2:
     if 'analysis' not in st.session_state:
         st.subheader("⚠️INTERVIEW NOT FOUND!", divider = "red")
-        st.markdown("#### *Please complete an interview in the preivous tab so it can be analysed for storytelling!*")
+        st.markdown("#### *Please complete an interview in the preivous tab so it can be analysed for storytelling or upload your own transcript below!*")
+
+        user_transcript = st.file_uploader(
+        "Upload your own transcript:", 
+        type=["txt"], 
+        accept_multiple_files=False
+        )
+        if user_transcript:
+           user_transcript_text = user_transcript.read().decode("utf-8")
+           st.session_state['transcript'] = user_transcript_text
+           with st.spinner("Analysing your interview..."):
+                analysis_context = ""
+                for selected_title in st.session_state["analysis_selected_files"]:
+                    for file_obj in st.session_state["titled_prereq_files"]:
+                        if file_obj["title"] == selected_title:
+                            analysis_context += f"\n\n----------{file_obj['title']}----------\n"
+                            analysis_context += file_obj["content"]
+                try:
+                    response = client.chat.completions.create(
+                        model=st.session_state["analysis_model"],
+                        messages=[
+                            {"role": "system", "content": st.session_state["analysis_system_prompt"] + analysis_context},  
+                            {"role": "user", "content": st.session_state["analysis_init_prompt"] + "\n-------Transcript-------\n"+ st.session_state["transcript"]}
+                        ]
+                    )
+                    st.session_state['analysis'] = response.choices[0].message.content
+                    st.success("Analysis Complete! - You can now generate your own story!")
+                except Exception as e:
+                    st.error("Analysis failed - please re-interview")
+
     else:
         st.title("📔Story Generation")
         story_option = st.selectbox(
