@@ -125,7 +125,7 @@ Steering Prompt;"You are a storytelling expert analyzing an ongoing interview. Y
     •	How has this experience changed the way you see your disability as part of your identity or story?
 
 
-    For each stage, determine if it has been covered in the conversation using the example questions as a guide by examning the transcript in depth. Respond with a valid JSON object with each stage as a key and values as either true (covered) or false (not yet covered) as shown below. 
+    For each stage, determine if it has been covered in the conversation using the example questions as a guide by examning the transcript in depth. Ensure however, for each point sufficient information is given in detail before you mark it as complete.Respond with a valid JSON object with each stage as a key and values as either true (covered) or false (not yet covered) as shown below. 
     Remember to:
     - Use the interview transcript to assess whether each stage has been meaningfully covered.
     - Respond ONLY with valid JSON. Do not include explanations, markdown, or natural language.
