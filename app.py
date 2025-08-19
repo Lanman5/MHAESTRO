@@ -309,7 +309,7 @@ with tab1:
             if st.session_state['safeguarding_flag'] is True:
                 steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
             elif all_vars_covered:
-                steering_instruction = "All criteria have been covered. Please thank the interviewee and end the interview."
+                steering_instruction = "All criteria have been covered. Please thank the interviewee and ask them if there's anything they'd like to add before ending the interview."
             else:
                 steering_instruction = (" ".join(steering_parts) + " Focus your next question to guide the participant toward one of these missing stages, while still following the interview framework and maintaining empathy and depth.")
             # 4. Send steering instruction to main interviewer
@@ -388,6 +388,13 @@ with tab1:
                 if st.session_state.get('view_analysis'):
                     with st.spinner("Loading analysis..."):
                         st.text_area("Analysis:", value=st.session_state['analysis'], height=300)
+                
+                st.download_button(
+                label="💾 Download Analysis",
+                data=st.session_state['analysis'],
+                file_name=f"{name}_interview_analysis.txt",
+                mime="text/plain"
+            )
 
 with tab2:
     if 'analysis' not in st.session_state:
