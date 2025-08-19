@@ -452,7 +452,7 @@ with tab2:
             if story_option == "EYFS Story":
                 st.session_state['generate_eyfs_story'] = True 
 
-            if st.session_state.get('generate_adult_story') and 'adult_story' not in st.session_state:
+            if st.session_state.get('generate_adult_story'):
                 with st.spinner("Writing your story..."):
                     adult_story_context = ""
                     for selected_title in st.session_state["adult_story_files"]:
@@ -470,10 +470,11 @@ with tab2:
                             )
                         st.session_state['adult_story'] = response.choices[0].message.content
                         st.success("Story Created! - Enjoy!")
+                        st.session_state['generate_adult_story'] = False
                     except Exception as e:
                         st.error("Story Generation Failed - Please try again...")
 
-            if st.session_state.get('generate_child_story') and 'child_story' not in st.session_state:
+            if st.session_state.get('generate_child_story'):
                 with st.spinner("Writing your story..."):
                     child_story_context = ""
                     for selected_title in st.session_state["child_story_files"]:
@@ -491,12 +492,13 @@ with tab2:
                             )
                         st.session_state['child_story'] = response.choices[0].message.content
                         st.success("Story Created! - Enjoy!")
+                        st.session_state['generate_child_story'] = False
                     except Exception as e:
                         st.error("Story Generation Failed - Please try again...")
 
                 
 
-            if st.session_state.get('generate_eyfs_story') and 'eyfs_story' not in st.session_state:
+            if st.session_state.get('generate_eyfs_story'):
                 with st.spinner("Writing your story..."):
                     eyfs_story_context = ""
                     for selected_title in st.session_state["eyfs_story_files"]:
@@ -514,6 +516,7 @@ with tab2:
                             )
                         st.session_state['eyfs_story'] = response.choices[0].message.content
                         st.success("Story Created! - Enjoy!")
+                        st.session_state['generate_eyfs_story'] = False
                     except Exception as e:
                         st.error("Story Generation Failed - Please try again...")
 
