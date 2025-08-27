@@ -42,7 +42,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 # Fetch all available voices dynamically
-voice_client = ElevenLabs()
+voice_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 voices_response = voice_client.voices.search()
 voice_options = {voice.name: voice.voice_id for voice in voices_response.voices}
 
