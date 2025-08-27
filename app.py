@@ -588,7 +588,7 @@ with tab2:
                                     ]
                                 )
                             st.session_state['eyfs_story'] = response.choices[0].message.content
-                            play_sound(st.session_state['eyfs_story'], key="eyfs_voice")
+                            play_sound(st.session_state['eyfs_story'], key="eyfs_voice", voice_id=voice_id)
                             st.success("Story Created! - Enjoy!")
                             st.session_state['generate_eyfs_story'] = False
                         except Exception as e:
