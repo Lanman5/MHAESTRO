@@ -296,6 +296,14 @@ with tab1:
 
 # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
+        if "story_stages" in st.session_state:
+            stages = st.session_state["story_stages"]
+            total = len(stages)
+            covered = sum(1 for v in stages.values() if v)
+            progress = covered / total
+
+            st.write("Interview Progress:")
+            st.progress(progress) 
         inner = ""
         for msg in st.session_state.messages[1:]:
             if msg["role"] == "system":
@@ -331,14 +339,6 @@ with tab1:
 
     # ------------------- Chat Input -------------------
     if st.session_state.get("messages"):
-        if "story_stages" in st.session_state:
-            stages = st.session_state["story_stages"]
-            total = len(stages)
-            covered = sum(1 for v in stages.values() if v)
-            progress = covered / total
-
-            st.write("Interview Progress:")
-            st.progress(progress) 
         if prompt := st.chat_input("Type your reply..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
 
