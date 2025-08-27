@@ -8,6 +8,8 @@ import json
 import logging 
 import streamlit.components.v1 as components
 from html import escape
+from elevenlabs.client import ElevenLabs
+from elevenlabs import VoiceSettings
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -38,6 +40,15 @@ st.title("🎙️Interviewer and Storyteller📖")
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+
+# Fetch all available voices dynamically
+voice_client = ElevenLabs()
+voices_response = voice_client.voices.search()
+voice_options = {voice.name: voice.voice_id for voice in voices_response.voices}
+
+if not voice_options:
+    st.error("No voices found in your account. Add a voice in ElevenLabs first.")
+
 @st.cache_data
 def get_model_list():
     try:
@@ -45,6 +56,14 @@ def get_model_list():
         return sorted([model.id for model in models.data if "gpt" in model.id])
     except Exception as e:
         st.error(f"Failed to fetch models: {e}")
+        return []
+    
+def get_elevenlabs_model_list():
+    try:
+        models = voice_client.models.list()
+        return sorted([model.model_id for model in models])
+    except Exception as e:
+        st.error(f"Failed to fetch ElevenLabs models: {e}")
         return []
 
 chat_models = get_model_list()
@@ -59,16 +78,6 @@ if not chat_models:
     st.error("No models available. Please check your OpenAI API credentials or network connection.")
     st.stop()
 
-#change font of Tabs (didn't really work)
-st.markdown("""
-    <style>
-    .stTabs [data-baseweb="tab"] {
-        font-size: 36px !important;
-        font-weight: bold;
-        padding: 12px 24px;
-    }
-    </style>
-""", unsafe_allow_html=True)
 
 #functions:
 class SafeDict(dict):
@@ -149,6 +158,29 @@ def read_csv():
             st.error(f"Error reading CSV data: {e}")
             return
 
+def play_sound(text, key, voice_id):
+    try:
+        response = voice_client.text_to_speech.convert(
+            text=text,
+            voice_id=voice_id,
+            model_id=st.session_state["TTS_model"],
+            output_format="mp3_44100_128",
+            voice_settings=VoiceSettings(
+                stability=0.5,
+                similarity_boost=0.75,
+                style=0.1,
+                use_speaker_boost=True
+            )
+        )
+
+        # Combine chunks into bytes
+        audio_bytes = b"".join(response)
+        
+        st.session_state[f"{key}_audio"] = audio_bytes
+
+    except Exception as e:
+        st.error(f"Error occurred while playing sound: {e}")
+
 prompt_list = read_csv()
 if not prompt_list:
     st.error("Failed to read prompts.")
@@ -215,7 +247,11 @@ if "config_initialized" not in st.session_state:
 
         "safeguarding_flag" : False,
 
-        "config_initialized": True
+        "config_initialized": True,
+
+        #tts config
+        "TTS_model": "eleven_multilingual_v2" #set a default
+
     })
 
 tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Configuration"])
@@ -427,7 +463,7 @@ with tab2:
                     st.session_state['analysis'] = response.choices[0].message.content
                     st.success("Analysis Complete! - You can now generate your own story!")
                     if 'analysis' in st.session_state:
-                        if st.button("📄 View Analysis"):
+                        if st.button("➡️ Proceed to story generation"):
                             st.session_state['view_analysis'] = True
 
                         if st.session_state.get('view_analysis'):
@@ -442,6 +478,9 @@ with tab2:
              "What type of Story would you like to generate?",
             ("Adult's Story", "Children's Story", "EYFS Story"),
         )
+        if voice_options:
+            selected_voice_name = st.selectbox("Select Voice:", list(voice_options.keys()))
+            voice_id = voice_options[selected_voice_name]
         if st.button("Generate Story"):   
             if story_option == "Adult's Story":
                 st.session_state['generate_adult_story'] = True
@@ -469,6 +508,7 @@ with tab2:
                                 ]
                             )
                         st.session_state['adult_story'] = response.choices[0].message.content
+                        play_sound(st.session_state['adult_story'], key="adult_voice", voice_id=voice_id)
                         st.success("Story Created! - Enjoy!")
                         st.session_state['generate_adult_story'] = False
                     except Exception as e:
@@ -491,6 +531,7 @@ with tab2:
                                 ]
                             )
                         st.session_state['child_story'] = response.choices[0].message.content
+                        play_sound(st.session_state['child_story'], key="child_voice", voice_id=voice_id)
                         st.success("Story Created! - Enjoy!")
                         st.session_state['generate_child_story'] = False
                     except Exception as e:
@@ -515,6 +556,7 @@ with tab2:
                                 ]
                             )
                         st.session_state['eyfs_story'] = response.choices[0].message.content
+                        play_sound(st.session_state['eyfs_story'], key="eyfs_voice")
                         st.success("Story Created! - Enjoy!")
                         st.session_state['generate_eyfs_story'] = False
                     except Exception as e:
@@ -522,13 +564,23 @@ with tab2:
 
     # Show stories if they exist
     if 'adult_story' in st.session_state:
-        st.text_area("Your Adult Story", value=st.session_state['adult_story'], height=500)
+        with st.container():
+            st.text_area("Your Adult Story", value=st.session_state['adult_story'], height=500)
+            if "adult_voice_audio" in st.session_state:
+                st.audio(st.session_state["adult_voice_audio"], format="audio/mp3")
 
     if 'child_story' in st.session_state:
-        st.text_area("Your Children's Story", value=st.session_state['child_story'], height=500)
+        with st.container():
+            st.text_area("Your Children's Story", value=st.session_state['child_story'], height=500)
+            if "child_voice_audio" in st.session_state:
+                st.audio(st.session_state["child_voice_audio"], format="audio/mp3")
+
 
     if 'eyfs_story' in st.session_state:
-        st.text_area("Your EYFS Story", value=st.session_state['eyfs_story'], height=500)      
+        with st.container():
+            st.text_area("Your EYFS Story", value=st.session_state['eyfs_story'], height=500)
+            if "eyfs_voice_audio" in st.session_state:
+                st.audio(st.session_state["eyfs_voice_audio"], format="audio/mp3")
 
 with tab3:
     st.title("Settings")    
@@ -578,7 +630,14 @@ with tab3:
         st.session_state.pop("user_uploaded_prereq_files", None)
 
 
-
+    st.markdown("### Select Text-to-Speech model")
+    model_list = get_elevenlabs_model_list()
+    if model_list:
+        selected_model_id = st.selectbox(
+            "Select Model:",
+            model_list,
+            key="TTS_model"
+        )
     tab1s, tab2s, tab3s, tab4s = st.tabs(["🎤Interviewer Settings","🤖Assistant Bot Settings", "📈Analysis Settings"," 📑Storyteller Settings"])
     if "titled_prereq_files" in st.session_state:
          prereq_titles = [f["title"] for f in st.session_state["titled_prereq_files"]]
