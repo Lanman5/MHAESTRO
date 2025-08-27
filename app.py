@@ -503,7 +503,7 @@ with tab2:
                 st.error(f"Error: {e}")
 
         if 'narrative' in st.session_state:
-            with st.expander("View your Narrative"):
+            with st.expander("View your Narrative", expanded=True):
                 st.text_area("Your Narrative Story", value=st.session_state['narrative'], height=500)
             story_option = st.selectbox(
                 "What type of Story would you like to generate?",
