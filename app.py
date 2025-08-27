@@ -302,7 +302,7 @@ with tab1:
             covered = sum(1 for v in stages.values() if v)
             progress = covered / total
 
-            st.markdown("#####__***Interview Progress:***__")
+            st.markdown("####__***Interview Progress:***__")
             st.progress(progress) 
         inner = ""
         for msg in st.session_state.messages[1:]:
