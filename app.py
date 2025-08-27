@@ -10,6 +10,7 @@ import streamlit.components.v1 as components
 from html import escape
 from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
+from datetime import datetime
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -263,6 +264,9 @@ with tab1:
         if not name:
             st.warning("Please enter your name to start the interview.")
         else:
+            #log interview start time:
+            st.session_state["interview_start_time"] = datetime.now()
+
             st.session_state["interview_name"] = name
 
             # Clear only relevant keys
@@ -379,9 +383,11 @@ with tab1:
             st.session_state.interview_ended = True
 
         if st.session_state.interview_ended:
+            st.session_state["interview_end_time"] = datetime.now()
+            interview_length = st.session_state["interview_end_time"] - st.session_state["interview_start_time"]
             if 'transcript' not in st.session_state:
                 transcript_text = generate_transcript(st.session_state.messages, user_name=name)
-                st.session_state['transcript'] = transcript_text
+                st.session_state['transcript'] = transcript_text + f"Interview length: {interview_length}"
                 st.session_state.messages = [
                     {"role": "assistant", "content": f"Thank you {name} for sharing your story. This concludes our interview."}
                 ]
