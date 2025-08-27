@@ -488,19 +488,20 @@ with tab2:
     else:
         st.title("📔Story Generation")
         if 'narrative' not in st.session_state:
-            try:
-                response = client.chat.completions.create(
-                        model=st.session_state["story_model_select"],
-                        messages=[
-                            {"role": "system", "content": st.session_state["narrative_system_prompt"]},
-                            {"role": "user", "content": st.session_state["narrative_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"] + "\n-------Transcript-------\n" + st.session_state["transcript"]}
-                        ]
-                    ) 
-                st.session_state['narrative'] = response.choices[0].message.content
-                st.success("Narrative Created! - You can now generate more stories!")
-            except Exception as e:
-                st.error("Story Generation Failed - Please try again...")
-                st.error(f"Error: {e}")
+            with st.spinner("Generating narrative..."):
+                try:
+                    response = client.chat.completions.create(
+                            model=st.session_state["story_model_select"],
+                            messages=[
+                                {"role": "system", "content": st.session_state["narrative_system_prompt"]},
+                                {"role": "user", "content": st.session_state["narrative_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"] + "\n-------Transcript-------\n" + st.session_state["transcript"]}
+                            ]
+                        ) 
+                    st.session_state['narrative'] = response.choices[0].message.content
+                    st.success("Narrative Created! - You can now generate more stories!")
+                except Exception as e:
+                    st.error("Story Generation Failed - Please try again...")
+                    st.error(f"Error: {e}")
 
         if 'narrative' in st.session_state:
             with st.expander("View your Narrative", expanded=True):
