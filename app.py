@@ -35,7 +35,7 @@ def check_password():
 
 check_password()
 
-st.set_page_config(page_title="Inclusive Interviewer", page_icon="🧠", layout="centered")
+st.set_page_config(page_title="Spirit Engine 2.0", page_icon="🧠", layout="centered")
 
 st.title("🎙️Interviewer and Storyteller📖")
 
@@ -385,9 +385,12 @@ with tab1:
         if st.session_state.interview_ended:
             st.session_state["interview_end_time"] = datetime.now()
             interview_length = st.session_state["interview_end_time"] - st.session_state["interview_start_time"]
+            total_seconds = interview_length.total_seconds()
+            minutes = int(total_seconds // 60)
+            seconds = int(total_seconds % 60)
             if 'transcript' not in st.session_state:
                 transcript_text = generate_transcript(st.session_state.messages, user_name=name)
-                st.session_state['transcript'] = transcript_text + f"Interview length: {interview_length}"
+                st.session_state['transcript'] = transcript_text + f"Interview length: {minutes} minutes, {seconds} seconds"
                 st.session_state.messages = [
                     {"role": "assistant", "content": f"Thank you {name} for sharing your story. This concludes our interview."}
                 ]
