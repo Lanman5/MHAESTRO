@@ -293,6 +293,16 @@ with tab1:
             {"role": "system", "content": interview_prompt + interview_context},
             {"role": "assistant", "content": interview_question}
         ]
+
+    if "story_stages" in st.session_state:
+        stages = st.session_state["story_stages"]
+        total = len(stages)
+        covered = sum(1 for v in stages.values() if v)
+        progress = covered / total
+
+        st.subheader("📊 Story Stages Progress")
+        st.progress(progress)
+
 # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
         inner = ""
