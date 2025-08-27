@@ -536,7 +536,7 @@ with tab2:
                                     model=st.session_state["story_model_select"],
                                     messages=[
                                         {"role": "system", "content": st.session_state["adult_system_prompt"] + adult_story_context},
-                                        {"role": "user", "content": st.session_state["adult_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]}
+                                        {"role": "user", "content": st.session_state["adult_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]+ "\n-------Narrative-------\n"+ st.session_state["narrative"]}
                                     ]
                                 )
                             st.session_state['adult_story'] = response.choices[0].message.content
@@ -559,7 +559,7 @@ with tab2:
                                     model=st.session_state["story_model_select"],
                                     messages=[
                                         {"role": "system", "content": st.session_state["child_system_prompt"] + child_story_context},
-                                        {"role": "user", "content": st.session_state["child_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]}
+                                        {"role": "user", "content": st.session_state["child_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"] + "\n-------Narrative-------\n"+ st.session_state["narrative"]}
                                     ]
                                 )
                             st.session_state['child_story'] = response.choices[0].message.content
@@ -584,7 +584,7 @@ with tab2:
                                     model=st.session_state["story_model_select"],
                                     messages=[
                                         {"role": "system", "content": st.session_state["eyfs_system_prompt"] + eyfs_story_context},
-                                        {"role": "user", "content": st.session_state["eyfs_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]}
+                                        {"role": "user", "content": st.session_state["eyfs_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]+ "\n-------Narrative-------\n"+ st.session_state["narrative"]}
                                     ]
                                 )
                             st.session_state['eyfs_story'] = response.choices[0].message.content
