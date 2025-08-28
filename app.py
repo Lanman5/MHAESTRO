@@ -301,15 +301,17 @@ with tab1:
 
     # ------------- Interview Init -------------
     def init_interview():
-        if not name:
+        """Initializes the interview state."""
+        if not st.session_state.get("interview_name"):
             st.warning("Please enter your name to start the interview.")
             return
 
-        st.session_state["interview_name"] = name
         st.session_state["interview_start_time"] = datetime.now()
+        # Reset interview-specific state
         for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended", "last_audio"]:
             st.session_state.pop(key, None)
 
+        # Build context
         interview_context = ""
         for selected_title in st.session_state.get("interview_selected_files", []):
             for file_obj in st.session_state.get("titled_prereq_files", []):
@@ -317,24 +319,31 @@ with tab1:
                     interview_context += f"\n\n----------{file_obj['title']}----------\n"
                     interview_context += file_obj["content"]
 
+        # Prompts
         interview_prompt_template = st.session_state.get("interview_prompt")
-        interview_prompt = interview_prompt_template.format_map(SafeDict(name=name))
-        first_question_template = st.session_state.get("first_question")
-        first_question = first_question_template.format_map(SafeDict(name=name))
+        interview_prompt = interview_prompt_template.format_map(SafeDict(name=st.session_state["interview_name"]))
+        interview_question_template = st.session_state.get("first_question")
+        interview_question = interview_question_template.format_map(SafeDict(name=st.session_state["interview_name"]))
 
         st.session_state.messages = [
             {"role": "system", "content": interview_prompt + interview_context},
-            {"role": "assistant", "content": first_question}
+            {"role": "assistant", "content": interview_question}
         ]
 
     if st.button("🎤 Begin Interview"):
+        st.session_state["interview_name"] = name
         init_interview()
 
-    # ------------- Persistent Chat Placeholder -------------
-    if 'chat_placeholder' not in st.session_state:
-        st.session_state['chat_placeholder'] = st.empty()
+    # ------------- Chat Display -------------
+    if st.session_state.get("messages"):
+        if "story_stages" in st.session_state:
+            stages = st.session_state["story_stages"]
+            total = len(stages)
+            covered = sum(1 for v in stages.values() if v)
+            progress = covered / total
+            st.markdown("##### __***Interview Progress:***__")
+            st.progress(progress)
 
-    def render_chat():
         inner = ""
         for msg in st.session_state.messages[1:]:
             if msg["role"] == "system":
@@ -362,20 +371,32 @@ with tab1:
             }}
         </script>
         """
-        st.session_state['chat_placeholder'].markdown(chat_html, unsafe_allow_html=True)
+        components.html(chat_html, height=420, scrolling=False)
 
-    # ------------- Process Messages -------------
+    # ------------- Message Processor -------------
     def process_message(user_input: str):
         if not user_input:
             return
 
-        # Append user message and render
+        # 1️⃣ Immediately append USER message to chat
         st.session_state.messages.append({"role": "user", "content": user_input})
-        render_chat()
 
-        # Generate assistant reply
-        steering_instruction = ""
+        # Render user message instantly
+        with chat_placeholder.container():
+            for msg in st.session_state.messages[1:]:
+                if msg["role"] == "system":
+                    continue
+                role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+                st.markdown(f"**{role}:** {msg['content']}")
+
+        # 2️⃣ Add assistant placeholder ("Thinking...")
+        thinking_placeholder = chat_placeholder.container()
+        with thinking_placeholder:
+            st.markdown("🧑‍💼 Interviewer: *Thinking...*")
+
+        # ---- Background analysis ----
         all_vars_covered = True
+        steering_instruction = ""
         with st.spinner("Analyzing..."):
             new_analysis = analyze_story_stages(
                 st.session_state.messages,
@@ -397,36 +418,48 @@ with tab1:
             if safeguarding_analysis:
                 st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
 
-        if st.session_state.get('safeguarding_flag'):
-            steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. End the interview and advise help."
+        # Steering logic
+        if st.session_state['safeguarding_flag'] is True:
+            steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
         elif all_vars_covered:
-            steering_instruction = "All criteria covered. Please thank the interviewee and ask if they want to add anything."
+            steering_instruction = "All criteria have been covered. Please thank the interviewee and ask them if there's anything they'd like to add before ending the interview."
         else:
-            steering_instruction += " Guide participant to missing stages while maintaining empathy."
+            steering_instruction += " Focus your next question to guide the participant toward one of the missing stages, while still following the interview framework and maintaining empathy and depth."
 
-        # Create reply
+        # 3️⃣ Generate assistant reply
         temp_messages = st.session_state.messages.copy()
         temp_messages.append({"role": "system", "content": steering_instruction})
+
         try:
             response = client.chat.completions.create(
                 model=st.session_state["interviewer_model"],
-                messages=temp_messages
+                messages=temp_messages,
             )
             reply = response.choices[0].message.content
         except Exception as e:
             reply = f"⚠️ Error generating response: {e}"
 
-        # Append assistant message, render, then TTS if checked
+        # Update assistant placeholder with actual reply
+        thinking_placeholder.empty()
         st.session_state.messages.append({"role": "assistant", "content": reply})
-        render_chat()
 
+        with chat_placeholder.container():
+            for msg in st.session_state.messages[1:]:
+                if msg["role"] == "system":
+                    continue
+                role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+                st.markdown(f"**{role}:** {msg['content']}")
+
+        # 4️⃣ Handle TTS (AFTER showing text)
         if st.session_state.get("talk_back"):
+            voice_id = st.session_state.get("voice_id", "pNInz6obpgDQGcFmaJgB")
+            model_id = st.session_state.get("TTS_model", "eleven_multilingual_v2")
             try:
                 audio_stream_iter = voice_client.text_to_speech.stream(
-                    voice_id=st.session_state.get("voice_id", "pNInz6obpgDQGcFmaJgB"),
+                    voice_id=voice_id,
                     text=reply,
-                    model_id=st.session_state.get("TTS_model", "eleven_multilingual_v2"),
-                    output_format="mp3_44100_128"
+                    model_id=model_id,
+                    output_format="mp3_44100_128",
                 )
                 audio_bytes = BytesIO()
                 for chunk in audio_stream_iter:
@@ -436,40 +469,45 @@ with tab1:
 
                 import base64
                 audio_b64 = base64.b64encode(audio_bytes.read()).decode()
-                st.markdown(f"""
+                audio_html = f"""
                 <audio autoplay>
-                    <source src='data:audio/mp3;base64,{audio_b64}' type='audio/mp3'>
+                    <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3">
                 </audio>
-                """, unsafe_allow_html=True)
+                """
+                st.markdown(audio_html, unsafe_allow_html=True)
+
             except Exception as e:
                 st.error(f"TTS playback failed: {e}")
 
-    # ------------- Input Controls -------------
-    st.checkbox("🔊 Interviewer should talk back", key="talk_back", value=True)
-    render_chat()
 
-    if prompt := st.chat_input("Type your reply..."):
-        process_message(prompt)
-        st.rerun()
+        # ------------- Chat Input Controls -------------
+        if st.session_state.get("messages"):
+            st.checkbox("🔊 Interviewer should talk back", key="talk_back", value=True)
 
-    audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
-    if audio_data is not None:
-        st.session_state.last_audio = audio_data.read()
+            # Text input → rerun for smoothness
+            if prompt := st.chat_input("Type your reply..."):
+                process_message(prompt)
+                st.rerun()
 
-    if st.session_state.get("last_audio"):
-        with st.spinner("Transcribing..."):
-            try:
-                audio_bytes = BytesIO(st.session_state.last_audio)
-                transcript = voice_client.speech_to_text.convert(
-                    file=audio_bytes,
-                    model_id="scribe_v1",
-                    diarize=False
-                ).text
-                process_message(transcript)
-            except Exception as e:
-                st.error(f"Transcription failed: {e}")
-            finally:
-                st.session_state.last_audio = None
+            # Audio input → no rerun
+            audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
+            if audio_data is not None:
+                st.session_state.last_audio = audio_data.read()
+
+            if st.session_state.get("last_audio"):
+                with st.spinner("Transcribing..."):
+                    try:
+                        audio_bytes = BytesIO(st.session_state.last_audio)
+                        transcript = voice_client.speech_to_text.convert(
+                            file=audio_bytes,
+                            model_id="scribe_v1",
+                            diarize=False
+                        ).text
+                        process_message(transcript)
+                    except Exception as e:
+                        st.error(f"Transcription failed: {e}")
+                    finally:
+                        st.session_state.last_audio = None  # clear after use
 
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
