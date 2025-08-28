@@ -392,27 +392,16 @@ if st.session_state.get("messages"):
         steering_parts = []
 
         with st.spinner("Thinking..."):
-            new_analysis = analyze_story_stages(
-                st.session_state.messages, 
-                st.session_state['steering_model'],
-                st.session_state['steering_prompt']
-            )
+            new_analysis = analyze_story_stages(st.session_state.messages, st.session_state['steering_model'],st.session_state['steering_prompt'])
             if new_analysis:
                 st.session_state['story_stages'].update(new_analysis)
                 missing = [s for s, covered in st.session_state['story_stages'].items() if not covered]
                 if missing:
                     all_vars_covered = False
-                    steering_parts.append(
-                        f"The following stages have not been meaningfully covered: {', '.join(missing)}."
-                    )
-            safeguarding_analysis = analyze_story_stages(
-                st.session_state.messages, 
-                st.session_state['safeguarding_model'], 
-                st.session_state['safeguarding_prompt']
-            )
+                    steering_parts.append(f"The following stages have not been meaningfully covered: {', '.join(missing)}.")
+            safeguarding_analysis = analyze_story_stages(st.session_state.messages, st.session_state['safeguarding_model'], st.session_state['safeguarding_prompt'])
             if safeguarding_analysis:
                 st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
-
 
             # 3. combine all steering instructions
             if st.session_state['safeguarding_flag'] is True:
