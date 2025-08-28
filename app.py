@@ -477,7 +477,7 @@ with tab1:
 
     # ------------- Chat Input Controls -------------
     if st.session_state.get("messages"):
-        st.checkbox("🔊 Interviewer should talk back", key="talk_back")
+        st.checkbox("🔊 Interviewer should talk back", key="talk_back", value = True)
 
         # Text input → rerun for smoothness
         if prompt := st.chat_input("Type your reply..."):
