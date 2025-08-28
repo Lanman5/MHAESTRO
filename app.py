@@ -342,16 +342,22 @@ with tab1:
         # Standard text input
         text_prompt = st.chat_input("Type your reply...")
 
-        # 🎙️ Audio input option
-        audio_input = st.audio_input("🎙️ Speak your answer instead")
-        talk_back = st.checkbox("Hear all responses", key="talk_back", value=True)
+        # 🎙️ Audio input option (safe handling)
+        audio_input = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
+
+        # Copy into session_state so it persists across reruns
+        if audio_input is not None:
+            st.session_state["last_audio"] = audio_input
+
+        talk_back = st.checkbox("Interviewer should talk back (TTS)", key="talk_back")
 
         user_message = None
+
         if text_prompt:
             user_message = text_prompt
-        elif audio_input:
+        elif "last_audio" in st.session_state and st.session_state["last_audio"] is not None:
             with st.spinner("Transcribing..."):
-                audio_bytes = BytesIO(audio_input.read())
+                audio_bytes = BytesIO(st.session_state["last_audio"].read())
                 transcript = voice_client.speech_to_text.convert(
                     file=audio_bytes,
                     model_id="scribe_v1",
@@ -388,7 +394,7 @@ with tab1:
                 if safeguarding_analysis:
                     st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
 
-            # 3. Combine steering instructions
+            # Combine steering instructions
             if st.session_state['safeguarding_flag'] is True:
                 steering_instruction = (
                     "The interviewee has indicated risk of harm. "
@@ -407,7 +413,7 @@ with tab1:
                     "while still following the interview framework and maintaining empathy and depth."
                 )
 
-            # 4. Send steering instruction to interviewer model
+            # Send steering instruction to interviewer model
             temp_messages = st.session_state.messages.copy()
             if steering_instruction:
                 temp_messages.append({"role": "system", "content": steering_instruction})
@@ -423,12 +429,12 @@ with tab1:
                     reply = "Sorry, there was an issue generating a response."
                     st.error(f"Error: {e}")
 
-            # 6. Append interviewer message
+            # Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
             # 🔊 Optional TTS playback
             if talk_back:
-                voice_id = "pNInz6obpgDQGcFmaJgB"  # your ElevenLabs voice ID
+                voice_id = "pNInz6obpgDQGcFmaJgB"  # replace with your ElevenLabs voice ID
                 model_id = "eleven_multilingual_v2"
                 output_format = "mp3_44100_128"
 
@@ -447,7 +453,7 @@ with tab1:
 
                 st.audio(audio_bytes, format="audio/mp3")
 
-            # 7. Refresh UI
+            # Refresh UI
             st.rerun()
 
         if 'interview_ended' not in st.session_state:
