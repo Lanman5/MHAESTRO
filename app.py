@@ -12,7 +12,6 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
 from datetime import datetime
 from io import BytesIO
-from streamlit_javascript import st_javascript
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -278,14 +277,6 @@ with tab1:
         # Reset interview-specific session state
         for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended", "last_audio"]:
             st.session_state.pop(key, None)
-        st.session_state["chat_component_initialized"] = False
-        st.session_state['story_stages'] = {
-            "Moment": False,
-            "Details": False,
-            "Realisation": False,
-            "Change": False,
-            "Resolution": False
-        }
 
         # Build interview context
         interview_context = ""
@@ -305,7 +296,6 @@ with tab1:
             {"role": "system", "content": interview_prompt + interview_context},
             {"role": "assistant", "content": interview_question}
         ]
-        st.rerun()
 
     if st.button("🎤 Begin Interview"):
         st.session_state["interview_name"] = name
@@ -321,17 +311,34 @@ with tab1:
             st.markdown("##### __***Interview Progress:***__")
             st.progress(progress)
 
-        if not st.session_state.get("chat_component_initialized"):
-            with open("chat_components.html", "r") as f:
-                html_content = f.read()
-            components.html(html_content, height=420, scrolling=False)
-            st.session_state["chat_component_initialized"] = True
+        inner = ""
+        for msg in st.session_state.messages[1:]:
+            if msg["role"] == "system":
+                continue
+            role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+            content = msg["content"].replace("\n", "<br>")
+            inner += f"<p><strong>{role}:</strong><br>{escape(content)}</p><hr>"
 
-            # Append all messages to the component on first load
-            for msg in st.session_state.messages[1:]:
-                role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
-                content = escape(msg["content"].replace("\n", "<br>"))
-                st_javascript(f'appendMessage("{role}", "{content}");')
+        chat_html = f"""
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+        <div id="chat-container" style="
+            height:400px; 
+            overflow-y:auto; 
+            padding:10px; 
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        ">{inner}</div>
+        <script>
+            const el = document.getElementById('chat-container');
+            if (el) {{
+                el.scrollTo({{ top: el.scrollHeight, behavior: 'smooth' }});
+            }}
+        </script>
+        """
+        components.html(chat_html, height=420, scrolling=False)
 
     # ------------------- Chat Input -------------------
     if st.session_state.get("messages"):
@@ -339,13 +346,11 @@ with tab1:
 
         def process_message(user_input):
             if not user_input:
-                return  # Don't process empty input
+                return # Don't process empty input
             
-            # Append user message and update component
             st.session_state.messages.append({"role": "user", "content": user_input})
-            st_javascript(f'appendMessage("🙋 {st.session_state["interview_name"]}", "{escape(user_input.replace("\\n", "<br>"))}");')
-
             with st.spinner("Thinking..."):
+                
                 # Ensure models are in state, provide defaults if not
                 steering_model = st.session_state.get('steering_model', default_model)
                 steering_prompt = st.session_state.get('steering_prompt', '')
@@ -355,7 +360,7 @@ with tab1:
 
                 all_vars_covered = True
                 steering_parts = []
-
+                
                 new_analysis = analyze_story_stages(
                     st.session_state.messages,
                     steering_model,
@@ -396,7 +401,7 @@ with tab1:
                     " Focus your next question to guide the participant toward one of these missing stages, "
                     "while still following the interview framework and maintaining empathy and depth."
                 )
-
+            
             # Send steering instruction to interviewer model
             temp_messages = st.session_state.messages.copy()
             if steering_instruction:
@@ -413,10 +418,8 @@ with tab1:
                     reply = "Sorry, there was an issue generating a response."
                     st.error(f"Error: {e}")
 
-            # Append interviewer message and update component
+            # Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
-            st_javascript(f'appendMessage("🧑‍💼 Interviewer", "{escape(reply.replace("\\n", "<br>"))}");')
-            st.rerun()
 
             # 🔊 Optional TTS playback
             if st.session_state.get("talk_back"):
@@ -438,13 +441,12 @@ with tab1:
                     st.audio(audio_bytes, format="audio/mp3")
                 except Exception as e:
                     st.error(f"Error occurred while playing sound: {e}")
-
+        
         # Callback for text input
         def handle_text_submit():
             if st.session_state.chat_text_input:
                 process_message(st.session_state.chat_text_input)
                 st.session_state.chat_text_input = ""
-                st.rerun()
 
         # Callback for audio input
         def handle_audio_submit():
@@ -459,13 +461,12 @@ with tab1:
                             diarize=False
                         ).text
                         process_message(transcript)
-                        st.rerun()
                     except Exception as e:
                         st.error(f"Transcription failed: {e}")
-
+        
         # Standard text input with callback
         st.chat_input("Type your reply...", key="chat_text_input", on_submit=handle_text_submit)
-
+        
         # Audio input with a key and on_change callback
         st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview", on_change=handle_audio_submit)
 
@@ -474,7 +475,6 @@ with tab1:
 
         if st.button("🛑 End Interview"):
             st.session_state.interview_ended = True
-            st.rerun()
 
         if st.session_state.interview_ended:
             st.session_state["interview_end_time"] = datetime.now()
@@ -482,7 +482,7 @@ with tab1:
             total_seconds = interview_length.total_seconds()
             minutes = int(total_seconds // 60)
             seconds = int(total_seconds % 60)
-
+            
             if 'transcript' not in st.session_state:
                 transcript_text = generate_transcript(st.session_state.messages, user_name=st.session_state.get("interview_name", "User"))
                 st.session_state['transcript'] = transcript_text + f"Interview length: {minutes} minutes, {seconds} seconds"
@@ -528,15 +528,13 @@ with tab1:
                 if st.session_state.get('view_analysis'):
                     with st.spinner("Loading analysis..."):
                         st.text_area("Analysis:", value=st.session_state['analysis'], height=300)
-
+                
                 st.download_button(
-                    label="💾 Download Analysis",
-                    data=st.session_state['analysis'],
-                    file_name=f"{st.session_state.get('interview_name', 'User')}_interview_analysis.txt",
-                    mime="text/plain"
-                )
-
-
+                label="💾 Download Analysis",
+                data=st.session_state['analysis'],
+                file_name=f"{st.session_state.get('interview_name', 'User')}_interview_analysis.txt",
+                mime="text/plain"
+            )
 with tab2:
     if 'analysis' not in st.session_state:
         st.subheader("⚠️INTERVIEW NOT FOUND!", divider = "red")
