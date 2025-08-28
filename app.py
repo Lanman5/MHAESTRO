@@ -186,14 +186,15 @@ def play_sound(text, key, voice_id):
         st.error(f"Error occurred while playing sound: {e}")
 # ---------- Safe wrapper for audio_input ----------
 def safe_audio_input(label, key="audio_data", **kwargs):
-    # Check if audio data already exists in session state
+    # Ensure key exists first
     if key not in st.session_state:
         st.session_state[key] = None
 
-    # Capture new audio input
-    audio = st.audio_input(label, **kwargs)
+    # Use a container so Streamlit doesn't try to reset session state internally
+    with st.container():
+        audio = st.audio_input(label, key=key, **kwargs)  # explicitly set key
 
-    # Update session state only if new audio is recorded
+    # Only update if new audio is captured
     if audio is not None:
         st.session_state[key] = audio
 
@@ -290,7 +291,7 @@ with tab1:
             st.session_state["interview_name"] = name
 
             # Clear only relevant keys
-            for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended"]:
+            for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended", "user_audio", "pending_input", "new_input_ready"]:
                 st.session_state.pop(key, None)
 
             # Build interview context
@@ -311,7 +312,7 @@ with tab1:
                 {"role": "assistant", "content": interview_question}
             ]
 
-# ------------------- Chat Display -------------------
+    # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
         stages = st.session_state.get("story_stages", {})
         if stages:
@@ -348,120 +349,132 @@ with tab1:
             "🔊 Bot speaks replies", value=st.session_state["bot_voice_enabled"]
         )
 
-    # ------------------- Chat Input -------------------
-    if st.session_state.get("messages"):
-        st.markdown("🎤 Or record your reply below:")
+    # ------------------- Unified Input Handler -------------------
+    if "new_input_ready" not in st.session_state:
+        st.session_state["new_input_ready"] = False
 
-        # 1️. Access all critical keys BEFORE audio input to prevent wipe
-        for key in st.session_state.keys():
-            _ = st.session_state.get(key)
+    st.markdown("🎤 Or record your reply below:")
 
-        # 2️. Safe audio input
-        audio_file = safe_audio_input("Record your reply", key="user_audio")
+    # Safe audio input
+    def safe_audio_input(label, key="user_audio", **kwargs):
+        if key not in st.session_state:
+            st.session_state[key] = None
+        with st.container():
+            audio = st.audio_input(label, key=key, **kwargs)
+        if audio is not None:
+            st.session_state[key] = audio
+        return st.session_state[key]
 
-        user_text = None
+    audio_file = safe_audio_input("Record your reply", key="user_audio")
+    user_text = None
 
-        # --- Speech-to-Text (ElevenLabs) ---
-        if audio_file:
-            audio_bytes = audio_file.read()
-            files = {"file": ("audio.wav", audio_bytes, "audio/wav")}
-            data = {"model_id": "scribe_v1"}
+    # Audio → STT
+    if audio_file:
+        audio_bytes = audio_file.read()
+        files = {"file": ("audio.wav", audio_bytes, "audio/wav")}
+        data = {"model_id": "scribe_v1"}
 
-            stt_response = requests.post(
-                "https://api.elevenlabs.io/v1/speech-to-text",
-                headers={"xi-api-key": os.getenv("ELEVENLABS_API_KEY")},
-                files=files,
-                data=data
+        stt_response = requests.post(
+            "https://api.elevenlabs.io/v1/speech-to-text",
+            headers={"xi-api-key": os.getenv("ELEVENLABS_API_KEY")},
+            files=files,
+            data=data
+        )
+
+        if stt_response.status_code == 200:
+            user_text = stt_response.json().get("text", "")
+            logging.debug(f"🎙️ User said: {user_text}")
+        else:
+            st.error(f"STT failed: {stt_response.text}")
+
+    # Typed input
+    if not user_text and (typed := st.chat_input("Type your reply...")):
+        user_text = typed
+
+    # Set pending input flag
+    if user_text:
+        st.session_state["pending_input"] = user_text
+        st.session_state["new_input_ready"] = True
+
+    # Process new input only once
+    if st.session_state.get("new_input_ready"):
+        user_text = st.session_state.pop("pending_input")
+        st.session_state["new_input_ready"] = False
+
+        # Append user message
+        st.session_state.setdefault("messages", []).append({"role": "user", "content": user_text})
+
+        all_vars_covered = True
+        steering_parts = []
+
+        with st.spinner("Thinking..."):
+            new_analysis = analyze_story_stages(
+                st.session_state.get("messages", []),
+                st.session_state.get("steering_model", default_model),
+                st.session_state.get("steering_prompt", "")
+            )
+            if new_analysis:
+                st.session_state.setdefault("story_stages", {}).update(new_analysis)
+                missing = [s for s, covered in st.session_state["story_stages"].items() if not covered]
+                if missing:
+                    all_vars_covered = False
+                    steering_parts.append(f"The following stages have not been meaningfully covered: {', '.join(missing)}.")
+
+            safeguarding_analysis = analyze_story_stages(
+                st.session_state.get("messages", []),
+                st.session_state.get("safeguarding_model", default_model),
+                st.session_state.get("safeguarding_prompt", "")
+            )
+            if safeguarding_analysis:
+                st.session_state["safeguarding_flag"] = safeguarding_analysis.get("safeguarding_flag", False)
+
+        if st.session_state.get("safeguarding_flag"):
+            steering_instruction = (
+                "The interviewee has indicated that either themselves or somebody else is at risk of harm. "
+                "Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
+            )
+        elif all_vars_covered:
+            steering_instruction = (
+                "All criteria have been covered. Please thank the interviewee and ask them if there's anything they'd like to add before ending the interview."
+            )
+        else:
+            steering_instruction = (
+                " ".join(steering_parts) +
+                " Focus your next question to guide the participant toward one of these missing stages, "
+                "while still following the interview framework and maintaining empathy and depth."
             )
 
-            if stt_response.status_code == 200:
-                user_text = stt_response.json().get("text", "")
-                logging.debug(f"🎙️ User said: {user_text}")
-            else:
-                st.error(f"STT failed: {stt_response.text}")
+        temp_messages = st.session_state.get("messages", []).copy()
+        if steering_instruction:
+            temp_messages.append({"role": "system", "content": steering_instruction})
 
-        # --- Or typed input ---
-        if not user_text and (typed := st.chat_input("Type your reply...")):
-            user_text = typed
-
-        # 3️. Append message if we have one
-        if user_text:
-            st.session_state.setdefault("messages", []).append({"role": "user", "content": user_text})
-
-            all_vars_covered = True
-            steering_parts = []
-
-            # 4️. Safe analysis
-            with st.spinner("Thinking..."):
-                new_analysis = analyze_story_stages(
-                    st.session_state.get("messages", []),
-                    st.session_state.get("steering_model", "default_model"),
-                    st.session_state.get("steering_prompt", "")
+        with st.spinner("Thinking..."):
+            try:
+                response = client.chat.completions.create(
+                    model=st.session_state.get("interviewer_model"),
+                    messages=temp_messages,
                 )
-                if new_analysis:
-                    st.session_state.setdefault("story_stages", {}).update(new_analysis)
-                    missing = [s for s, covered in st.session_state["story_stages"].items() if not covered]
-                    if missing:
-                        all_vars_covered = False
-                        steering_parts.append(f"The following stages have not been meaningfully covered: {', '.join(missing)}.")
+                reply = response.choices[0].message.content
+            except Exception as e:
+                reply = "Sorry, there was an issue generating a response."
+                st.error(f"Error: {e}")
 
-                safeguarding_analysis = analyze_story_stages(
-                    st.session_state.get("messages", []),
-                    st.session_state.get("safeguarding_model", "default_model"),
-                    st.session_state.get("safeguarding_prompt", "")
-                )
-                if safeguarding_analysis:
-                    st.session_state["safeguarding_flag"] = safeguarding_analysis.get("safeguarding_flag", False)
+        st.session_state.setdefault("messages", []).append({"role": "assistant", "content": reply})
 
-            # 5️. Combine steering instructions
-            if st.session_state.get("safeguarding_flag"):
-                steering_instruction = (
-                    "The interviewee has indicated that either themselves or somebody else is at risk of harm. "
-                    "Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
-                )
-            elif all_vars_covered:
-                steering_instruction = (
-                    "All criteria have been covered. Please thank the interviewee and ask them if there's anything they'd like to add before ending the interview."
-                )
-            else:
-                steering_instruction = (
-                    " ".join(steering_parts) +
-                    " Focus your next question to guide the participant toward one of these missing stages, "
-                    "while still following the interview framework and maintaining empathy and depth."
-                )
+        # Auto-play TTS if enabled
+        if st.session_state.get("bot_voice_enabled"):
+            play_sound(reply, key="last_reply", voice_id=list(voice_options.values())[0])
+            if last_audio := st.session_state.get("last_reply_audio"):
+                audio_html = f"""
+                <audio autoplay>
+                    <source src="data:audio/mp3;base64,{base64.b64encode(last_audio).decode()}" type="audio/mp3">
+                </audio>
+                """
+                st.markdown(audio_html, unsafe_allow_html=True)
 
-            # 6️. Generate next assistant message safely
-            temp_messages = st.session_state.get("messages", []).copy()
-            if steering_instruction:
-                temp_messages.append({"role": "system", "content": steering_instruction})
+        # Refresh UI once
+        st.rerun()
 
-            with st.spinner("Thinking..."):
-                try:
-                    response = client.chat.completions.create(
-                        model=st.session_state.get("interviewer_model", "default_model"),
-                        messages=temp_messages,
-                    )
-                    reply = response.choices[0].message.content
-                except Exception as e:
-                    reply = "Sorry, there was an issue generating a response."
-                    st.error(f"Error: {e}")
-
-            # 7️. Append assistant reply
-            st.session_state.setdefault("messages", []).append({"role": "assistant", "content": reply})
-
-            # 8️. Auto-play TTS if enabled
-            if st.session_state.get("bot_voice_enabled"):
-                play_sound(reply, key="last_reply", voice_id=list(voice_options.values())[0])
-                if last_audio := st.session_state.get("last_reply_audio"):
-                    audio_html = f"""
-                    <audio autoplay>
-                        <source src="data:audio/mp3;base64,{base64.b64encode(last_audio).decode()}" type="audio/mp3">
-                    </audio>
-                    """
-                    st.markdown(audio_html, unsafe_allow_html=True)
-
-            # 9️.Refresh UI safely
-            st.rerun()
         # Interview end controls and logic
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
