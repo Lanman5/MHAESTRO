@@ -344,7 +344,7 @@ with tab1:
 
         # 🎙️ Audio input option
         audio_input = st.audio_input("🎙️ Speak your answer instead")
-        talk_back = st.checkbox("Interviewer should talk back (TTS)", key="talk_back")
+        talk_back = st.checkbox("Hear all responses", key="talk_back", value=True)
 
         user_message = None
         if text_prompt:
@@ -428,12 +428,24 @@ with tab1:
 
             # 🔊 Optional TTS playback
             if talk_back:
-                audio_stream = voice_client.text_to_speech.convert(
+                voice_id = "pNInz6obpgDQGcFmaJgB"  # your ElevenLabs voice ID
+                model_id = "eleven_multilingual_v2"
+                output_format = "mp3_44100_128"
+
+                audio_stream_iter = voice_client.text_to_speech.stream(
+                    voice_id=voice_id,
                     text=reply,
-                    voice="Rachel",  # replace with your preferred voice
-                    model_id="eleven_multilingual_v2"
+                    model_id=model_id,
+                    output_format=output_format,
                 )
-                st.audio(audio_stream, format="audio/mp3")
+
+                audio_bytes = BytesIO()
+                for chunk in audio_stream_iter:
+                    if isinstance(chunk, (bytes, bytearray)):
+                        audio_bytes.write(chunk)
+                audio_bytes.seek(0)
+
+                st.audio(audio_bytes, format="audio/mp3")
 
             # 7. Refresh UI
             st.rerun()
