@@ -309,7 +309,7 @@ with tab1:
         st.session_state["interview_start_time"] = datetime.now()
 
         # Reset interview-specific state
-        for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended", "last_audio", "pending_tts"]:
+        for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended", "last_audio"]:
             st.session_state.pop(key, None)
 
         # Build context
@@ -330,7 +330,6 @@ with tab1:
             {"role": "system", "content": interview_prompt + interview_context},
             {"role": "assistant", "content": interview_question}
         ]
-        st.session_state["pending_tts"] = interview_question  # Speak the first question
 
     if st.button("🎤 Begin Interview"):
         st.session_state["interview_name"] = name
@@ -380,13 +379,26 @@ with tab1:
         if not user_input:
             return
 
+        # 1️⃣ Immediately append USER message to chat
         st.session_state.messages.append({"role": "user", "content": user_input})
 
-        all_vars_covered = True
-        steering_parts = []
+        # Render user message instantly
+        with chat_placeholder.container():
+            for msg in st.session_state.messages[1:]:
+                if msg["role"] == "system":
+                    continue
+                role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+                st.markdown(f"**{role}:** {msg['content']}")
 
+        # 2️⃣ Add assistant placeholder ("Thinking...")
+        thinking_placeholder = chat_placeholder.container()
+        with thinking_placeholder:
+            st.markdown("🧑‍💼 Interviewer: *Thinking...*")
+
+        # ---- Background analysis ----
+        all_vars_covered = True
+        steering_instruction = ""
         with st.spinner("Analyzing..."):
-            # Steering analysis
             new_analysis = analyze_story_stages(
                 st.session_state.messages,
                 st.session_state['steering_model'],
@@ -397,9 +409,8 @@ with tab1:
                 missing = [s for s, covered in st.session_state['story_stages'].items() if not covered]
                 if missing:
                     all_vars_covered = False
-                    steering_parts.append(f"The following stages have not been meaningfully covered: {', '.join(missing)}.")
+                    steering_instruction = f"Missing stages: {', '.join(missing)}."
 
-            # Safeguarding analysis
             safeguarding_analysis = analyze_story_stages(
                 st.session_state.messages,
                 st.session_state['safeguarding_model'],
@@ -408,112 +419,102 @@ with tab1:
             if safeguarding_analysis:
                 st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
 
-        # Steering instruction
+        # Steering logic
         if st.session_state.get('safeguarding_flag') is True:
-            steering_instruction = (
-                "The interviewee has indicated risk of harm. "
-                "End the interview immediately and advise them to seek help. "
-                "Do not ask follow-up questions."
-            )
+            steering_instruction = "Safeguarding risk detected. End interview immediately."
         elif all_vars_covered:
-            steering_instruction = (
-                "All criteria have been covered. Please thank the interviewee "
-                "and ask if there's anything they'd like to add before ending."
-            )
-        else:
-            steering_instruction = (
-                " ".join(steering_parts) +
-                " Focus your next question to guide the participant toward one of these missing stages, "
-                "while still following the interview framework and maintaining empathy and depth."
-            )
+            steering_instruction = "All stages covered. Wrap up politely."
+        elif not steering_instruction:
+            steering_instruction = "Guide towards missing stages with empathy."
 
-        # Generate reply
+        # 3️⃣ Generate assistant reply
         temp_messages = st.session_state.messages.copy()
-        if steering_instruction:
-            temp_messages.append({"role": "system", "content": steering_instruction})
+        temp_messages.append({"role": "system", "content": steering_instruction})
 
-        with st.spinner("Thinking..."):
-            try:
-                response = client.chat.completions.create(
-                    model=st.session_state["interviewer_model"],
-                    messages=temp_messages,
-                )
-                reply = response.choices[0].message.content
-            except Exception as e:
-                reply = "Sorry, there was an issue generating a response."
-                st.error(f"Error: {e}")
+        try:
+            response = client.chat.completions.create(
+                model=st.session_state["interviewer_model"],
+                messages=temp_messages,
+            )
+            reply = response.choices[0].message.content
+        except Exception as e:
+            reply = f"⚠️ Error generating response: {e}"
 
+        # Update assistant placeholder with actual reply
+        thinking_placeholder.empty()
         st.session_state.messages.append({"role": "assistant", "content": reply})
 
-        # Queue reply for TTS playback on next render
+        with chat_placeholder.container():
+            for msg in st.session_state.messages[1:]:
+                if msg["role"] == "system":
+                    continue
+                role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+                st.markdown(f"**{role}:** {msg['content']}")
+
+        # 4️⃣ Handle TTS (AFTER showing text)
         if st.session_state.get("talk_back"):
-            st.session_state["pending_tts"] = reply
+            voice_id = st.session_state.get("voice_id", "pNInz6obpgDQGcFmaJgB")
+            model_id = st.session_state.get("TTS_model", "eleven_multilingual_v2")
+            try:
+                audio_stream_iter = voice_client.text_to_speech.stream(
+                    voice_id=voice_id,
+                    text=reply,
+                    model_id=model_id,
+                    output_format="mp3_44100_128",
+                )
+                audio_bytes = BytesIO()
+                for chunk in audio_stream_iter:
+                    if isinstance(chunk, (bytes, bytearray)):
+                        audio_bytes.write(chunk)
+                audio_bytes.seek(0)
 
-    # ------------- Chat Input Controls -------------
-    if st.session_state.get("messages"):
-        st.checkbox("🔊 Interviewer should talk back", key="talk_back", value = True)
+                import base64
+                audio_b64 = base64.b64encode(audio_bytes.read()).decode()
+                audio_html = f"""
+                <audio autoplay>
+                    <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3">
+                </audio>
+                """
+                st.markdown(audio_html, unsafe_allow_html=True)
 
-        if prompt := st.chat_input("Type your reply..."):
-            process_message(prompt)
+            except Exception as e:
+                st.error(f"TTS playback failed: {e}")
 
-        # Audio input → no rerun
-        audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
-        if audio_data is not None:
-            st.session_state.last_audio = audio_data.read()
 
-        if st.session_state.get("last_audio"):
-            with st.spinner("Transcribing..."):
-                try:
-                    audio_bytes = BytesIO(st.session_state.last_audio)
-                    transcript = voice_client.speech_to_text.convert(
-                        file=audio_bytes,
-                        model_id="scribe_v1",
-                        diarize=False
-                    ).text
-                    process_message(transcript)
-                except Exception as e:
-                    st.error(f"Transcription failed: {e}")
-                finally:
-                    st.session_state.last_audio = None
+        # ------------- Chat Input Controls -------------
+        if st.session_state.get("messages"):
+            st.checkbox("🔊 Interviewer should talk back", key="talk_back", value=True)
+
+            # Text input → rerun for smoothness
+            if prompt := st.chat_input("Type your reply..."):
+                process_message(prompt)
+                st.rerun()
+
+            # Audio input → no rerun
+            audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
+            if audio_data is not None:
+                st.session_state.last_audio = audio_data.read()
+
+            if st.session_state.get("last_audio"):
+                with st.spinner("Transcribing..."):
+                    try:
+                        audio_bytes = BytesIO(st.session_state.last_audio)
+                        transcript = voice_client.speech_to_text.convert(
+                            file=audio_bytes,
+                            model_id="scribe_v1",
+                            diarize=False
+                        ).text
+                        process_message(transcript)
+                    except Exception as e:
+                        st.error(f"Transcription failed: {e}")
+                    finally:
+                        st.session_state.last_audio = None  # clear after use
 
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
 
         if st.button("🛑 End Interview"):
             st.session_state.interview_ended = True
-
-    # ------------- Autoplay TTS if pending -------------
-    if st.session_state.get("talk_back") and st.session_state.get("pending_tts"):
-        try:
-            reply = st.session_state["pending_tts"]
-            voice_id = st.session_state.get("voice_id", "pNInz6obpgDQGcFmaJgB")
-            model_id = st.session_state.get("TTS_model", "eleven_multilingual_v2")
-
-            audio_stream_iter = voice_client.text_to_speech.stream(
-                voice_id=voice_id,
-                text=reply,
-                model_id=model_id,
-                output_format="mp3_44100_128",
-            )
-            audio_bytes = BytesIO()
-            for chunk in audio_stream_iter:
-                if isinstance(chunk, (bytes, bytearray)):
-                    audio_bytes.write(chunk)
-            audio_bytes.seek(0)
-
-            import base64
-            audio_b64 = base64.b64encode(audio_bytes.read()).decode()
-            audio_html = f"""
-            <audio autoplay>
-                <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3">
-            </audio>
-            """
-            st.markdown(audio_html, unsafe_allow_html=True)
-
-        except Exception as e:
-            st.error(f"Error occurred while playing sound: {e}")
-        finally:
-            st.session_state["pending_tts"] = None
 
         if st.session_state.interview_ended:
             st.session_state["interview_end_time"] = datetime.now()
