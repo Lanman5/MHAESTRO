@@ -351,12 +351,12 @@ with tab1:
     if st.session_state.get("messages"):
         st.markdown("🎤 Or record your reply below:")
 
+        user_text = None
+
         try:
             # Native Streamlit audio input with error handling
             audio_file = st.audio_input("Record your reply")
             
-            user_text = None
-
             if audio_file:
                 # Create unique key to avoid reprocessing
                 audio_key = f"audio_{len(st.session_state.messages)}"
@@ -385,6 +385,8 @@ with tab1:
                             if user_text:
                                 logging.debug(f"🎙️ User said: {user_text}")
                                 st.success(f"Transcribed: {user_text}")
+                            else:
+                                st.warning("No speech detected in recording")
                         else:
                             st.error(f"STT failed: {stt_response.text}")
                             
@@ -392,17 +394,12 @@ with tab1:
             st.error(f"Audio recording error: {e}")
             st.info("Please try typing your response instead.")
 
-    # Typed input fallback
-    if not user_text:
-        if typed := st.chat_input("Type your reply..."):
-            user_text = typed
-
-        # --- Or typed input ---
+        # Typed input fallback (only if no audio text was captured)
         if not user_text:
             if typed := st.chat_input("Type your reply..."):
                 user_text = typed
 
-        # Append message if it exists 
+        # Process message if it exists 
         if user_text:
             st.session_state.messages.append({"role": "user", "content": user_text})
             all_vars_covered = True
@@ -464,6 +461,7 @@ with tab1:
             # 7. Refresh UI
             st.rerun()
 
+        # Interview end controls (outside the message processing block)
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
 
