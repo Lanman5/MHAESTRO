@@ -13,7 +13,7 @@ from elevenlabs import VoiceSettings
 from datetime import datetime
 import requests
 import base64
-from streamlit_webrtc import webrtc_streamer, AudioProcessorBase
+from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, StreamingMode
 import numpy as np
 import av
 
@@ -328,7 +328,7 @@ with tab1:
         # --- Streamlit WebRTC audio input ---
         webrtc_ctx = webrtc_streamer(
             key="speech-to-text",
-            mode="SENDRECV",
+            mode=StreamingMode.SENDRECV,
             audio_receiver_size=1024,
             rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
             media_stream_constraints={"audio": True, "video": False},
