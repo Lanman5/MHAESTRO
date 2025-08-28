@@ -309,7 +309,7 @@ with tab1:
         st.session_state["interview_start_time"] = datetime.now()
 
         # Reset interview-specific state
-        for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended", "last_audio"]:
+        for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended", "last_audio", "pending_tts"]:
             st.session_state.pop(key, None)
 
         # Build context
@@ -330,6 +330,7 @@ with tab1:
             {"role": "system", "content": interview_prompt + interview_context},
             {"role": "assistant", "content": interview_question}
         ]
+        st.session_state["pending_tts"] = interview_question  # Speak the first question
 
     if st.button("🎤 Begin Interview"):
         st.session_state["interview_name"] = name
@@ -444,45 +445,16 @@ with tab1:
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
 
-        # 🔊 Optional TTS playback
+        # Queue reply for TTS playback on next render
         if st.session_state.get("talk_back"):
-            voice_id = st.session_state.get("voice_id", "pNInz6obpgDQGcFmaJgB")
-            model_id = st.session_state.get("TTS_model", "eleven_multilingual_v2")
-            try:
-                audio_stream_iter = voice_client.text_to_speech.stream(
-                    voice_id=voice_id,
-                    text=reply,
-                    model_id=model_id,
-                    output_format="mp3_44100_128",
-                )
-                audio_bytes = BytesIO()
-                for chunk in audio_stream_iter:
-                    if isinstance(chunk, (bytes, bytearray)):
-                        audio_bytes.write(chunk)
-                audio_bytes.seek(0)
-
-                # Instead of st.audio (which requires user click),
-                # embed <audio autoplay>
-                import base64
-                audio_b64 = base64.b64encode(audio_bytes.read()).decode()
-                audio_html = f"""
-                <audio autoplay>
-                    <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3">
-                </audio>
-                """
-                st.markdown(audio_html, unsafe_allow_html=True)
-
-            except Exception as e:
-                st.error(f"Error occurred while playing sound: {e}")
+            st.session_state["pending_tts"] = reply
 
     # ------------- Chat Input Controls -------------
     if st.session_state.get("messages"):
         st.checkbox("🔊 Interviewer should talk back", key="talk_back", value = True)
 
-        # Text input → rerun for smoothness
         if prompt := st.chat_input("Type your reply..."):
             process_message(prompt)
-            st.rerun()
 
         # Audio input → no rerun
         audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
@@ -502,13 +474,46 @@ with tab1:
                 except Exception as e:
                     st.error(f"Transcription failed: {e}")
                 finally:
-                    st.session_state.last_audio = None  # clear after use
+                    st.session_state.last_audio = None
 
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
 
         if st.button("🛑 End Interview"):
             st.session_state.interview_ended = True
+
+    # ------------- Autoplay TTS if pending -------------
+    if st.session_state.get("talk_back") and st.session_state.get("pending_tts"):
+        try:
+            reply = st.session_state["pending_tts"]
+            voice_id = st.session_state.get("voice_id", "pNInz6obpgDQGcFmaJgB")
+            model_id = st.session_state.get("TTS_model", "eleven_multilingual_v2")
+
+            audio_stream_iter = voice_client.text_to_speech.stream(
+                voice_id=voice_id,
+                text=reply,
+                model_id=model_id,
+                output_format="mp3_44100_128",
+            )
+            audio_bytes = BytesIO()
+            for chunk in audio_stream_iter:
+                if isinstance(chunk, (bytes, bytearray)):
+                    audio_bytes.write(chunk)
+            audio_bytes.seek(0)
+
+            import base64
+            audio_b64 = base64.b64encode(audio_bytes.read()).decode()
+            audio_html = f"""
+            <audio autoplay>
+                <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3">
+            </audio>
+            """
+            st.markdown(audio_html, unsafe_allow_html=True)
+
+        except Exception as e:
+            st.error(f"Error occurred while playing sound: {e}")
+        finally:
+            st.session_state["pending_tts"] = None
 
         if st.session_state.interview_ended:
             st.session_state["interview_end_time"] = datetime.now()
