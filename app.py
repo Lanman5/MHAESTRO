@@ -335,6 +335,8 @@ with tab1:
         init_interview()
 
     # ------------- Chat Display -------------
+    chat_placeholder = st.empty()  # ✅ define early so it's always available
+
     if st.session_state.get("messages"):
         if "story_stages" in st.session_state:
             stages = st.session_state["story_stages"]
@@ -372,7 +374,6 @@ with tab1:
         </script>
         """
         components.html(chat_html, height=420, scrolling=False)
-
     # ------------- Message Processor -------------
     def process_message(user_input: str):
         if not user_input:
@@ -480,34 +481,34 @@ with tab1:
                 st.error(f"TTS playback failed: {e}")
 
 
-        # ------------- Chat Input Controls -------------
-        if st.session_state.get("messages"):
-            st.checkbox("🔊 Interviewer should talk back", key="talk_back", value=True)
+    # ------------- Chat Input Controls (always visible once interview starts) -------------
+    if st.session_state.get("messages"):
+        st.checkbox("🔊 Interviewer should talk back", key="talk_back", value=True)
 
-            # Text input → rerun for smoothness
-            if prompt := st.chat_input("Type your reply..."):
-                process_message(prompt)
-                st.rerun()
+        # Text input → rerun for smoothness
+        if prompt := st.chat_input("Type your reply..."):
+            process_message(prompt)
+            st.rerun()
 
-            # Audio input → no rerun
-            audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
-            if audio_data is not None:
-                st.session_state.last_audio = audio_data.read()
+        # Audio input → no rerun
+        audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
+        if audio_data is not None:
+            st.session_state.last_audio = audio_data.read()
 
-            if st.session_state.get("last_audio"):
-                with st.spinner("Transcribing..."):
-                    try:
-                        audio_bytes = BytesIO(st.session_state.last_audio)
-                        transcript = voice_client.speech_to_text.convert(
-                            file=audio_bytes,
-                            model_id="scribe_v1",
-                            diarize=False
-                        ).text
-                        process_message(transcript)
-                    except Exception as e:
-                        st.error(f"Transcription failed: {e}")
-                    finally:
-                        st.session_state.last_audio = None  # clear after use
+        if st.session_state.get("last_audio"):
+            with st.spinner("Transcribing..."):
+                try:
+                    audio_bytes = BytesIO(st.session_state.last_audio)
+                    transcript = voice_client.speech_to_text.convert(
+                        file=audio_bytes,
+                        model_id="scribe_v1",
+                        diarize=False
+                    ).text
+                    process_message(transcript)
+                except Exception as e:
+                    st.error(f"Transcription failed: {e}")
+                finally:
+                    st.session_state.last_audio = None  # clear after use
 
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
