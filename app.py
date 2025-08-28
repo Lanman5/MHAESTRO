@@ -11,6 +11,10 @@ from html import escape
 from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
 from datetime import datetime
+import tempfile
+import requests
+import base64
+from st_audiorec import st_audiorec
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -337,11 +341,48 @@ with tab1:
         # Render chat + auto-scroll
         components.html(chat_html, height=420, scrolling=False)
 
+        # Voice toggle directly under chat
+        if "bot_voice_enabled" not in st.session_state:
+            st.session_state.bot_voice_enabled = True  # default on
+
+        st.session_state.bot_voice_enabled = st.checkbox(
+            "🔊 Bot speaks replies", 
+            value=st.session_state.bot_voice_enabled, 
+            help="Toggle whether the interviewer also speaks aloud")
     # ------------------- Chat Input -------------------
     if st.session_state.get("messages"):
-        if prompt := st.chat_input("Type your reply..."):
-            st.session_state.messages.append({"role": "user", "content": prompt})
+        st.markdown("🎤 Or record your reply below:")
+        audio_bytes = st_audiorec()
 
+        user_text = None
+
+        # --- Speech-to-Text (ElevenLabs) ---
+        if audio_bytes:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmpfile:
+                tmpfile.write(audio_bytes)
+                audio_path = tmpfile.name
+
+            with open(audio_path, "rb") as f:
+                stt_response = requests.post(
+                    "https://api.elevenlabs.io/v1/speech-to-text",
+                    headers={"xi-api-key": os.getenv("ELEVENLABS_API_KEY")},
+                    files={"file": f},
+                )
+
+            if stt_response.status_code == 200:
+                user_text = stt_response.json().get("text", "")
+                logging.debug(f"🎙️ User said: {user_text}")
+            else:
+                st.error(f"STT failed: {stt_response.text}")
+
+        # --- Or typed input ---
+        if not user_text:
+            if typed := st.chat_input("Type your reply..."):
+                user_text = typed
+
+        # Append message if we have one
+        if user_text:
+            st.session_state.messages.append({"role": "user", "content": user_text})
             all_vars_covered = True
             steering_parts = []
 
@@ -385,6 +426,20 @@ with tab1:
 
             # 6. Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
+
+            # --- Auto-play TTS if enabled ---
+            if st.session_state.bot_voice_enabled:
+                play_sound(reply, key="last_reply", voice_id=list(voice_options.values())[0])
+                if "last_reply_audio" in st.session_state:
+                    audio_bytes = st.session_state["last_reply_audio"]
+
+                    audio_html = f"""
+                    <audio autoplay>
+                        <source src="data:audio/mp3;base64,{base64.b64encode(audio_bytes).decode()}" type="audio/mp3">
+                    </audio>
+                    """
+                    st.markdown(audio_html, unsafe_allow_html=True)
+
 
             # 7. Refresh UI
             st.rerun()
