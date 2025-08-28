@@ -357,12 +357,22 @@ if st.session_state.get("messages"):
 
     # --- Speech-to-Text (ElevenLabs) ---
     if audio_file:
-        audio_bytes = audio_file.read()  # get raw bytes
+        audio_bytes = audio_file.read()  # Raw audio bytes
+
+        files = {
+            "file": ("audio.wav", audio_bytes, "audio/wav")
+        }
+        data = {
+            "model_id": "scribe_v1", 
+        }
+
         stt_response = requests.post(
             "https://api.elevenlabs.io/v1/speech-to-text",
             headers={"xi-api-key": os.getenv("ELEVENLABS_API_KEY")},
-            files={"file": ("audio.wav", audio_bytes, "audio/wav")},
+            files=files,
+            data=data
         )
+
 
         if stt_response.status_code == 200:
             user_text = stt_response.json().get("text", "")
