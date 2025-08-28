@@ -296,20 +296,20 @@ if "config_initialized" not in st.session_state:
 tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Configuration"])
 
 with tab1:
-    st.title("🗣️Interviewer")
+    st.title("🗣️ Interviewer")
     name = st.text_input("Enter your Name")
 
-    # ------------------- Init Interview -------------------
+    # ------------- Interview Init -------------
     def init_interview():
+        """Initializes the interview state."""
         if not st.session_state.get("interview_name"):
             st.warning("Please enter your name to start the interview.")
             return
 
         st.session_state["interview_start_time"] = datetime.now()
 
-        # Reset session state
-        for key in ["messages", "transcript", "analysis",
-                    "view_analysis", "interview_ended", "last_audio"]:
+        # Reset interview-specific state
+        for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended", "last_audio"]:
             st.session_state.pop(key, None)
 
         # Build context
@@ -331,43 +331,66 @@ with tab1:
             {"role": "assistant", "content": interview_question}
         ]
 
-        # Reset chat UI
-        st.session_state.chat_html = st.session_state.chat_html.split("</div>")[0] + "</div>"  # clear messages
-        append_message("assistant", interview_question)
-
     if st.button("🎤 Begin Interview"):
         st.session_state["interview_name"] = name
         init_interview()
 
-    # ------------------- Progress -------------------
-    if st.session_state.get("messages") and "story_stages" in st.session_state:
-        stages = st.session_state["story_stages"]
-        total = len(stages)
-        covered = sum(1 for v in stages.values() if v)
-        st.markdown("##### __***Interview Progress:***__")
-        st.progress(covered / total)
+    # ------------- Chat Display -------------
+    if st.session_state.get("messages"):
+        if "story_stages" in st.session_state:
+            stages = st.session_state["story_stages"]
+            total = len(stages)
+            covered = sum(1 for v in stages.values() if v)
+            progress = covered / total
+            st.markdown("##### __***Interview Progress:***__")
+            st.progress(progress)
 
-    # ------------------- Process Messages -------------------
-    def process_message(user_input):
-        if not user_input.strip():
+        inner = ""
+        for msg in st.session_state.messages[1:]:
+            if msg["role"] == "system":
+                continue
+            role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+            content = escape(msg["content"]).replace("\n", "<br>")
+            inner += f"<p><strong>{role}:</strong><br>{content}</p><hr>"
+
+        chat_html = f"""
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+        <div id="chat-container" style="
+            height:400px; 
+            overflow-y:auto; 
+            padding:10px; 
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        ">{inner}</div>
+        <script>
+            const el = document.getElementById('chat-container');
+            if (el) {{
+                el.scrollTo({{ top: el.scrollHeight, behavior: 'smooth' }});
+            }}
+        </script>
+        """
+        components.html(chat_html, height=420, scrolling=False)
+
+    # ------------- Message Processor -------------
+    def process_message(user_input: str):
+        if not user_input:
             return
 
-        # Add user message
         st.session_state.messages.append({"role": "user", "content": user_input})
-        append_message("user", user_input)
 
-        # ------------------- Steering + Safeguarding -------------------
-        with st.spinner("Thinking..."):
-            steering_model = st.session_state.get('steering_model', default_model)
-            steering_prompt = st.session_state.get('steering_prompt', '')
-            safeguarding_model = st.session_state.get('safeguarding_model', default_model)
-            safeguarding_prompt = st.session_state.get('safeguarding_prompt', '')
-            interviewer_model = st.session_state.get('interviewer_model', default_model)
+        all_vars_covered = True
+        steering_parts = []
 
-            all_vars_covered = True
-            steering_parts = []
-
-            new_analysis = analyze_story_stages(st.session_state.messages, steering_model, steering_prompt)
+        with st.spinner("Analyzing..."):
+            # Steering analysis
+            new_analysis = analyze_story_stages(
+                st.session_state.messages,
+                st.session_state['steering_model'],
+                st.session_state['steering_prompt']
+            )
             if new_analysis:
                 st.session_state['story_stages'].update(new_analysis)
                 missing = [s for s, covered in st.session_state['story_stages'].items() if not covered]
@@ -375,11 +398,16 @@ with tab1:
                     all_vars_covered = False
                     steering_parts.append(f"The following stages have not been meaningfully covered: {', '.join(missing)}.")
 
-            safeguarding_analysis = analyze_story_stages(st.session_state.messages, safeguarding_model, safeguarding_prompt)
+            # Safeguarding analysis
+            safeguarding_analysis = analyze_story_stages(
+                st.session_state.messages,
+                st.session_state['safeguarding_model'],
+                st.session_state['safeguarding_prompt']
+            )
             if safeguarding_analysis:
                 st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
 
-        # Build steering instruction
+        # Steering instruction
         if st.session_state.get('safeguarding_flag') is True:
             steering_instruction = (
                 "The interviewee has indicated risk of harm. "
@@ -398,7 +426,7 @@ with tab1:
                 "while still following the interview framework and maintaining empathy and depth."
             )
 
-        # ------------------- Generate reply -------------------
+        # Generate reply
         temp_messages = st.session_state.messages.copy()
         if steering_instruction:
             temp_messages.append({"role": "system", "content": steering_instruction})
@@ -406,22 +434,20 @@ with tab1:
         with st.spinner("Thinking..."):
             try:
                 response = client.chat.completions.create(
-                    model=interviewer_model,
+                    model=st.session_state["interviewer_model"],
                     messages=temp_messages,
                 )
                 reply = response.choices[0].message.content
             except Exception as e:
-                reply = "⚠️ Sorry, there was an issue generating a response."
+                reply = "Sorry, there was an issue generating a response."
                 st.error(f"Error: {e}")
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
-        append_message("assistant", reply)
 
-        # ------------------- TTS -------------------
+        # 🔊 Optional TTS playback
         if st.session_state.get("talk_back"):
             voice_id = st.session_state.get("voice_id", "pNInz6obpgDQGcFmaJgB")
             model_id = st.session_state.get("TTS_model", "eleven_multilingual_v2")
-
             try:
                 audio_stream_iter = voice_client.text_to_speech.stream(
                     voice_id=voice_id,
@@ -438,33 +464,37 @@ with tab1:
             except Exception as e:
                 st.error(f"Error occurred while playing sound: {e}")
 
-    # ------------------- Chat Input -------------------
+    # ------------- Chat Input Controls -------------
     if st.session_state.get("messages"):
         st.checkbox("Interviewer should talk back (TTS)", key="talk_back")
 
-        # Text input
+        # Text input → rerun for smoothness
         if prompt := st.chat_input("Type your reply..."):
             process_message(prompt)
+            st.rerun()
 
-        # Audio input
-        def handle_audio_submit():
-            if st.session_state.audio_input_interview:
-                audio_data = st.session_state.audio_input_interview
-                with st.spinner("Transcribing..."):
-                    audio_bytes = BytesIO(audio_data.read())
-                    try:
-                        transcript = voice_client.speech_to_text.convert(
-                            file=audio_bytes,
-                            model_id="scribe_v1",
-                            diarize=False
-                        ).text
-                        process_message(transcript)
-                    except Exception as e:
-                        st.error(f"Transcription failed: {e}")
+        # Audio input → no rerun
+        audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
+        if audio_data is not None:
+            st.session_state.last_audio = audio_data.read()
 
-        st.audio_input("🎙️ Speak your answer instead",
-                       key="audio_input_interview",
-                       on_change=handle_audio_submit)
+        if st.session_state.get("last_audio"):
+            with st.spinner("Transcribing..."):
+                try:
+                    audio_bytes = BytesIO(st.session_state.last_audio)
+                    transcript = voice_client.speech_to_text.convert(
+                        file=audio_bytes,
+                        model_id="scribe_v1",
+                        diarize=False
+                    ).text
+                    process_message(transcript)
+                except Exception as e:
+                    st.error(f"Transcription failed: {e}")
+                finally:
+                    st.session_state.last_audio = None  # clear after use
+
+        if 'interview_ended' not in st.session_state:
+            st.session_state.interview_ended = False
 
         if st.button("🛑 End Interview"):
             st.session_state.interview_ended = True
