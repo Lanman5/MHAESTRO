@@ -13,7 +13,6 @@ from elevenlabs import VoiceSettings
 from datetime import datetime
 import requests
 import base64
-from audiorecorder import audiorecorder
 
 logging.basicConfig(
     level=logging.DEBUG,
