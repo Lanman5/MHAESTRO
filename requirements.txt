@@ -1,8 +1,4 @@
 streamlit
-streamlit-webrtc
-numpy
-PyAV
-soundfile
 requests
 openai
 elevenlabs
