@@ -261,6 +261,9 @@ if "config_initialized" not in st.session_state:
 
     })
 
+for key, value in st.session_state.items():
+    logging.debug(f"{key}: {value}")
+    
 tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Configuration"])
 
 with tab1:
