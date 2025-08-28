@@ -13,7 +13,7 @@ from elevenlabs import VoiceSettings
 from datetime import datetime
 import requests
 import base64
-from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, StreamingMode
+from streamlit_webrtc import webrtc_streamer, AudioProcessorBase
 import numpy as np
 import av
 
@@ -41,11 +41,9 @@ def check_password():
 check_password()
 
 st.set_page_config(page_title="Spirit Engine 2.0", page_icon="🧠", layout="centered")
-
 st.title("🎙️Interviewer and Storyteller📖")
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 
 # Fetch all available voices dynamically
 voice_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
@@ -70,7 +68,6 @@ def get_elevenlabs_model_list():
         return sorted([model.model_id for model in models])
     except Exception as e:
         st.error(f"Failed to fetch ElevenLabs models: {e}")
-        return []
 
 chat_models = get_model_list()
 default_model = "gpt-4o"
@@ -84,8 +81,7 @@ if not chat_models:
     st.error("No models available. Please check your OpenAI API credentials or network connection.")
     st.stop()
 
-
-#functions:
+# ----------------------- Functions -----------------------
 class SafeDict(dict):
     def __missing__(self, key):
         return f"{{{key}}}"
@@ -93,22 +89,21 @@ class SafeDict(dict):
 class AudioProcessor(AudioProcessorBase):
     def __init__(self):
         self.recorded_frames = []
+
     def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
-        # Collect raw frames
-        self.recorded_frames.append(frame.to_ndarray().tobytes())
+        self.recorded_frames.append(frame.to_ndarray())
         return frame
 
-def get_audio_bytes_from_frames(frames, sample_rate=16000, sample_width=2, channels=1):
-    import io, wave
-    audio_buffer = io.BytesIO()
-    wf = wave.open(audio_buffer, 'wb')
-    wf.setnchannels(channels)
-    wf.setsampwidth(sample_width)
-    wf.setframerate(sample_rate)
-    wf.writeframes(b''.join(frames))
-    wf.close()
-    audio_buffer.seek(0)
-    return audio_buffer.read()    
+def get_audio_bytes_from_frames(frames, sample_rate=44100):
+    import soundfile as sf
+    import io
+    if not frames:
+        return None
+    audio = np.concatenate(frames, axis=0)
+    buf = io.BytesIO()
+    sf.write(buf, audio, samplerate=sample_rate, format="WAV")
+    buf.seek(0)
+    return buf.read()
 
 def read_file(input_file):
     if input_file is None:
@@ -123,44 +118,40 @@ def read_file(input_file):
         return StringIO(input_file.getvalue().decode("utf-8")).read()
     except Exception as e:
         return f"ERROR reading uploaded file: {e}"
-    
+
 def generate_transcript(messages, user_name="User"):
     transcript = ""
     for msg in messages[1:]:
         if msg["role"] == "system":
             continue
-            #role = "prompt"
         elif msg["role"] == "assistant":
             role = "Interviewer"
         else:
             role = user_name
-
         content = msg["content"]
         transcript += f"{role}: {content}\n\n"
     return transcript
+
 def json_check(text):
-#attempts to get rid of any trailing context text returned by AI before json.
     match = re.search(r"\{.*?\}", text, re.S)
     if not match:
         logging.warning("No JSON object found in model output.")
         return {}
-    
     json_str = match.group(0)
     try:
         return json.loads(json_str)
     except json.JSONDecodeError as e:
         logging.warning(f"JSON decoding failed: {e}")
         return {}
-    
+
 def analyze_story_stages(messages, analysis_model, analysis_prompt):
     transcript = generate_transcript(messages)
-
     response = client.chat.completions.create(
         model=analysis_model,
         messages=[
             {"role": "system", "content": analysis_prompt},
-            {"role": "user", "content": "Carry out the analysis as specified in the framework above using this transcript:" +transcript}])
-
+            {"role": "user", "content": "Carry out the analysis as specified in the framework above using this transcript:" + transcript}
+        ])
     result = response.choices[0].message.content
     logging.debug("Raw analysis result: %s", result)
     return json_check(result)
@@ -174,7 +165,6 @@ def read_csv():
     else:
         st.error(f"default prompts contained in '{DEFAULT_FILE_PATH}' was not found.")
         return
-
     if string_data:
         try:
             reader = csv.reader(string_data, delimiter=';', quotechar='"')
@@ -198,93 +188,74 @@ def play_sound(text, key, voice_id):
                 use_speaker_boost=True
             )
         )
-
-        # Combine chunks into bytes
         audio_bytes = b"".join(response)
-        
         st.session_state[f"{key}_audio"] = audio_bytes
-
+        audio_html = f"""
+        <audio autoplay>
+            <source src="data:audio/mp3;base64,{base64.b64encode(audio_bytes).decode()}" type="audio/mp3">
+        </audio>
+        """
+        st.markdown(audio_html, unsafe_allow_html=True)
     except Exception as e:
         st.error(f"Error occurred while playing sound: {e}")
 
+# ----------------------- Load prompts -----------------------
 prompt_list = read_csv()
 if not prompt_list:
     st.error("Failed to read prompts.")
     st.stop()
 
-
+# ----------------------- Initialize session_state -----------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "config_initialized" not in st.session_state:
     if prompt_list and len(prompt_list) < 17:
-
         st.error("Insufficient prompts in Default CSV configuration. Please ensure at least 17 entries.")
         st.stop()
-
     init_file_data = []
     init_file_data.append({"title": prompt_list[10][0], "content": read_file(prompt_list[10][1])})
     init_file_data.append({"title": prompt_list[11][0], "content": read_file(prompt_list[11][1])})
     init_file_data.append({"title": prompt_list[12][0], "content": read_file(prompt_list[12][1])})
-
     st.session_state.update({
-        #files 
         "titled_prereq_files": init_file_data,
-        # Interviewer
         "interview_prompt": prompt_list[0][1],
         "first_question": prompt_list[1][1],
         "interviewer_model": default_model,
         "interview_selected_files": [prompt_list[10][0],prompt_list[11][0],prompt_list[12][0]],
-
-        # Analysis
         "analysis_system_prompt": prompt_list[2][1],
         "analysis_init_prompt": prompt_list[3][1],
         "analysis_model": default_model,
         "analysis_selected_files": [],
-
-        #First person narrative
         "narrative_system_prompt": prompt_list[15][1],
         "narrative_init_prompt": prompt_list[16][1],
-
-        # Adult Stories
         "adult_system_prompt": prompt_list[4][1],
         "adult_init_prompt": prompt_list[5][1],
         "adult_story_files": [prompt_list[10][0],prompt_list[11][0],prompt_list[12][0]],
-
-        # Child Stories
         "child_system_prompt": prompt_list[6][1],
         "child_init_prompt": prompt_list[7][1],
         "child_story_files":[prompt_list[10][0],prompt_list[11][0],prompt_list[12][0]],
-
-        # EYFS Stories
         "eyfs_system_prompt": prompt_list[8][1],
         "eyfs_init_prompt": prompt_list[9][1],
         "eyfs_story_files": [prompt_list[10][0],prompt_list[11][0],prompt_list[12][0]],
-
-        #assistant bots
         "steering_prompt": prompt_list[13][1],
         "safeguarding_prompt": prompt_list[14][1],
-
         "story_model_select": default_model,
         "steering_model": default_model,
         "safeguarding_model": default_model,
-
         "story_stages":{
-        "Moment": False,
-        "Details": False,
-        "Realisation": False,
-        "Change": False,
-        "Resolution": False
+            "Moment": False,
+            "Details": False,
+            "Realisation": False,
+            "Change": False,
+            "Resolution": False
         },
-
         "safeguarding_flag" : False,
-
         "config_initialized": True,
-
-        #tts config
-        "TTS_model": "eleven_multilingual_v2" #set a default
-
+        "TTS_model": "eleven_multilingual_v2",
+        "bot_voice_enabled": True
     })
 
+# ----------------------- Tabs -----------------------
 tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Configuration"])
 
 with tab1:
@@ -294,12 +265,8 @@ with tab1:
         if not name:
             st.warning("Please enter your name to start the interview.")
         else:
-            #log interview start time:
             st.session_state["interview_start_time"] = datetime.now()
-
             st.session_state["interview_name"] = name
-
-            # Clear only relevant keys
             for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended"]:
                 st.session_state.pop(key, None)
             interview_context = ""
@@ -308,18 +275,16 @@ with tab1:
                     if file_obj["title"] == selected_title:
                         interview_context += f"\n\n----------{file_obj['title']}----------\n"
                         interview_context += file_obj["content"]
-
             interview_prompt_template = st.session_state["interview_prompt"]
             interview_prompt = interview_prompt_template.format_map(SafeDict(name=name))
-
             interview_question_template = st.session_state["first_question"]
             interview_question = interview_question_template.format_map(SafeDict(name=name))
             st.session_state.messages = [
-            {"role": "system", "content": interview_prompt + interview_context},
-            {"role": "assistant", "content": interview_question}
-        ]
+                {"role": "system", "content": interview_prompt + interview_context},
+                {"role": "assistant", "content": interview_question}
+            ]
 
-    # ------------------- Chat Display -------------------
+    # ------------------- Chat Display with Live STT/TTS -------------------
     if st.session_state.get("messages"):
         st.markdown("🎤 Or record your reply below:")
 
@@ -328,7 +293,7 @@ with tab1:
         # --- Streamlit WebRTC audio input ---
         webrtc_ctx = webrtc_streamer(
             key="speech-to-text",
-            mode=StreamingMode.SENDRECV,
+            mode="sendrecv",  # updated for latest streamlit-webrtc
             audio_receiver_size=1024,
             rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
             media_stream_constraints={"audio": True, "video": False},
@@ -338,17 +303,14 @@ with tab1:
 
         if webrtc_ctx.state.playing:
             st.write("Recording... Speak now!")
+
         if hasattr(webrtc_ctx, "audio_processor") and webrtc_ctx.audio_processor:
-            if st.button("Transcribe Audio"):
+            if st.button("🎙️ Transcribe & Play TTS"):
                 frames = webrtc_ctx.audio_processor.recorded_frames
                 if frames:
                     audio_bytes = get_audio_bytes_from_frames(frames)
-                    files = {
-                        "file": ("audio.wav", audio_bytes, "audio/wav")
-                    }
-                    data = {
-                        "model_id": "scribe_v1", 
-                    }
+                    files = {"file": ("audio.wav", audio_bytes, "audio/wav")}
+                    data = {"model_id": "scribe_v1"}
                     with st.spinner("Converting speech to text..."):
                         stt_response = requests.post(
                             "https://api.elevenlabs.io/v1/speech-to-text",
@@ -361,18 +323,23 @@ with tab1:
                             if user_text:
                                 logging.debug(f"🎙️ User said: {user_text}")
                                 st.success(f"Transcribed: {user_text}")
+                                # Live TTS playback
+                                if st.session_state["bot_voice_enabled"]:
+                                    play_sound(user_text, key="last_reply", voice_id=list(voice_options.values())[0])
                             else:
                                 st.warning("No speech detected in recording")
                         else:
                             st.error(f"STT failed: {stt_response.text}")
-                    # Optional: reset frames for next message
                     webrtc_ctx.audio_processor.recorded_frames = []
-        # Typed input fallback (only if no audio text was captured)
+
+        # Typed input fallback
         if not user_text:
             if typed := st.chat_input("Type your reply..."):
                 user_text = typed
+                if st.session_state["bot_voice_enabled"]:
+                    play_sound(user_text, key="last_reply", voice_id=list(voice_options.values())[0])
 
-        # Process message if it exists 
+        # Process message if it exists
         if user_text:
             st.session_state.messages.append({"role": "user", "content": user_text})
             all_vars_covered = True
@@ -398,7 +365,6 @@ with tab1:
                 if safeguarding_analysis:
                     st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
 
-                # 3. combine all steering instructions
                 if st.session_state['safeguarding_flag'] is True:
                     steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
                 elif all_vars_covered:
@@ -410,7 +376,6 @@ with tab1:
                     temp_messages.append({"role": "system", "content": steering_instruction})
                 logging.debug(temp_messages)
 
-            # 5. main interviewer generates the next question
             with st.spinner("Thinking..."):
                 try:
                     response = client.chat.completions.create(
@@ -422,24 +387,13 @@ with tab1:
                     reply = "Sorry, there was an issue generating a response."
                     st.error(f"Error: {e}")
 
-            # 6. Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
-            # --- Auto-play TTS if enabled ---
-            if st.session_state.bot_voice_enabled:
+            if st.session_state["bot_voice_enabled"]:
                 play_sound(reply, key="last_reply", voice_id=list(voice_options.values())[0])
-                if "last_reply_audio" in st.session_state:
-                    audio_bytes = st.session_state["last_reply_audio"]
-                    audio_html = f"""
-                    <audio autoplay>
-                        <source src="data:audio/mp3;base64,{base64.b64encode(audio_bytes).decode()}" type="audio/mp3">
-                    </audio>
-                    """
-                    st.markdown(audio_html, unsafe_allow_html=True)
 
-            # 7. Refresh UI
             st.rerun()
-
+            
         # Interview end controls and logic
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False

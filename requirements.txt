@@ -1,9 +1,8 @@
 streamlit
+streamlit-webrtc
+numpy
+PyAV
+soundfile
+requests
 openai
 elevenlabs
-requests
-streamlit-audiorecorder
-streamlit-webrtc
-av
-numpy
-pydub
