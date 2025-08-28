@@ -275,7 +275,7 @@ with tab1:
             st.session_state["interview_start_time"] = datetime.now()
             st.session_state["interview_name"] = name
 
-            # Clear relevant keys
+            # Clear only relevant keys for a new interview
             for key in [
                 "messages", "transcript", "analysis", "view_analysis",
                 "interview_ended", "user_audio", "pending_input",
@@ -336,38 +336,36 @@ with tab1:
         )
 
     # ------------------- Unified Input Handling -------------------
-
     st.markdown("🎤 Or record your reply below:")
 
-    # Ensure session state key exists
-    if "user_audio" not in st.session_state:
-        st.session_state["user_audio"] = None
+    # 1️⃣ Reset the audio key safely
+    st.session_state["user_audio"] = None
+
+    # 2️⃣ Call the audio_input widget (do NOT assign return value)
+    st.audio_input("Record your reply", key="user_audio")
+
+    # 3️⃣ Typed input
+    typed_input = st.chat_input("Type your reply...")
+
+    # 4️⃣ Determine which input to process (audio or typed)
     if "pending_input" not in st.session_state:
         st.session_state["pending_input"] = None
     if "new_input_ready" not in st.session_state:
         st.session_state["new_input_ready"] = False
 
-    # Audio input widget (do NOT assign the return)
-    st.audio_input("Record your reply", key="user_audio")
-
-    # Typed input
-    typed_input = st.chat_input("Type your reply...")
-
-    # Set pending input if audio or typed input exists
     if st.session_state["user_audio"] is not None and not st.session_state["new_input_ready"]:
-        st.session_state["pending_input"] = "audio"  # flag for processing audio
+        st.session_state["pending_input"] = "audio"
         st.session_state["new_input_ready"] = True
     elif typed_input and not st.session_state["new_input_ready"]:
         st.session_state["pending_input"] = typed_input
         st.session_state["new_input_ready"] = True
 
-    # Process input exactly once per new input
+    # 5️⃣ Process input exactly once
     if st.session_state["new_input_ready"]:
         st.session_state["new_input_ready"] = False
         user_text = None
 
         if st.session_state["pending_input"] == "audio":
-            # Convert recorded audio → text
             audio_bytes = st.session_state["user_audio"].read()
             files = {"file": ("audio.wav", audio_bytes, "audio/wav")}
             data = {"model_id": "scribe_v1"}
@@ -381,7 +379,6 @@ with tab1:
                 user_text = stt_response.json().get("text", "")
             else:
                 st.error(f"STT failed: {stt_response.text}")
-            # Clear audio after processing
             st.session_state["user_audio"] = None
         else:
             user_text = st.session_state["pending_input"]
@@ -464,6 +461,7 @@ with tab1:
 
             # Refresh UI once
             st.rerun()
+
 
         # Interview end controls and logic
         if 'interview_ended' not in st.session_state:
