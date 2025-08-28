@@ -460,13 +460,24 @@ with tab1:
                     if isinstance(chunk, (bytes, bytearray)):
                         audio_bytes.write(chunk)
                 audio_bytes.seek(0)
-                st.audio(audio_bytes, format="audio/mp3")
+
+                # Instead of st.audio (which requires user click),
+                # embed <audio autoplay>
+                import base64
+                audio_b64 = base64.b64encode(audio_bytes.read()).decode()
+                audio_html = f"""
+                <audio autoplay>
+                    <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3">
+                </audio>
+                """
+                st.markdown(audio_html, unsafe_allow_html=True)
+
             except Exception as e:
                 st.error(f"Error occurred while playing sound: {e}")
 
     # ------------- Chat Input Controls -------------
     if st.session_state.get("messages"):
-        st.checkbox("Interviewer should talk back (TTS)", key="talk_back")
+        st.checkbox("🔊 Interviewer should talk back", key="talk_back")
 
         # Text input → rerun for smoothness
         if prompt := st.chat_input("Type your reply..."):
