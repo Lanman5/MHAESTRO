@@ -188,7 +188,7 @@ def play_sound(text, key, voice_id):
 def safe_audio_input(label, key="user_audio", **kwargs):
     if key not in st.session_state:
         st.session_state[key] = None
-    st.audio_input(label, key=key, **kwargs)
+    st.audio_input(label, key=key, **kwargs) 
     return st.session_state[key]
 
 prompt_list = read_csv()
