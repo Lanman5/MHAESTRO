@@ -334,17 +334,11 @@ with tab1:
         st.session_state["interview_name"] = name
         init_interview()
 
-    # ------------- Chat Display -------------
-    chat_placeholder = st.empty()  # ✅ define early so it's always available
-
-    if st.session_state.get("messages"):
-        if "story_stages" in st.session_state:
-            stages = st.session_state["story_stages"]
-            total = len(stages)
-            covered = sum(1 for v in stages.values() if v)
-            progress = covered / total
-            st.markdown("##### __***Interview Progress:***__")
-            st.progress(progress)
+    # ------------- Chat Display Logic -------------
+    def display_chat_html():
+        """Renders the entire chat history using the original HTML."""
+        if not st.session_state.get("messages"):
+            return
 
         inner = ""
         for msg in st.session_state.messages[1:]:
@@ -357,9 +351,9 @@ with tab1:
         chat_html = f"""
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
         <div id="chat-container" style="
-            height:400px;
-            overflow-y:auto;
-            padding:10px;
+            height:400px; 
+            overflow-y:auto; 
+            padding:10px; 
             font-family: 'Inter', sans-serif;
             font-size: 14px;
             line-height: 1.5;
@@ -375,6 +369,9 @@ with tab1:
         """
         components.html(chat_html, height=420, scrolling=False)
 
+    chat_placeholder = st.empty()
+    display_chat_html()
+
     # ------------- Message Processor -------------
     def process_message(user_input: str):
         if not user_input:
@@ -382,8 +379,8 @@ with tab1:
 
         # 1️⃣ Immediately append USER message and display it
         st.session_state.messages.append({"role": "user", "content": user_input})
-        display_messages()
-
+        display_chat_html()
+        
         # 2️⃣ Add assistant placeholder ("Thinking...")
         with chat_placeholder.container():
             st.markdown("🧑‍💼 Interviewer: *Thinking...*")
@@ -433,9 +430,9 @@ with tab1:
         except Exception as e:
             reply = f"⚠️ Error generating response: {e}"
 
-        # 4️⃣ Update assistant reply and display it
+        # 4️⃣ Update assistant placeholder with actual reply and display
         st.session_state.messages.append({"role": "assistant", "content": reply})
-        display_messages() # Re-render the chat with the new assistant message
+        display_chat_html() # Re-render the chat with the new assistant message
 
         # 5️⃣ Handle TTS (AFTER showing text)
         if st.session_state.get("talk_back"):
@@ -466,30 +463,21 @@ with tab1:
             except Exception as e:
                 st.error(f"TTS playback failed: {e}")
 
-    # Re-usable function to display chat history
-    def display_messages():
-        with chat_placeholder.container():
-            for msg in st.session_state.messages[1:]:
-                if msg["role"] == "system":
-                    continue
-                role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
-                st.markdown(f"**{role}:** {msg['content']}")
-                
     # ------------- Chat Input Controls (always visible once interview starts) -------------
     if st.session_state.get("messages"):
         st.checkbox("🔊 Interviewer should talk back", key="talk_back", value=True)
 
         # Text input
-        text_input_placeholder = st.empty()
-        prompt = text_input_placeholder.chat_input("Type your reply...")
+        prompt = st.chat_input("Type your reply...")
         if prompt:
             process_message(prompt)
-            # No rerun needed here, the function will handle display and TTS
+            st.rerun()
 
         # Audio input
         audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
         if audio_data is not None:
             st.session_state.last_audio = audio_data.read()
+            st.rerun()
 
         if st.session_state.get("last_audio"):
             with st.spinner("Transcribing..."):
