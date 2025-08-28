@@ -20,6 +20,8 @@ logging.basicConfig(
 
 AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
 
+chat_placeholder = st.empty()  # persistent container
+
 def check_password():
     """Simple password protection."""
     if "authenticated" not in st.session_state:
@@ -182,7 +184,7 @@ def play_sound(text, key, voice_id):
 
     except Exception as e:
         st.error(f"Error occurred while playing sound: {e}")
-        
+
 if "chat_html" not in st.session_state:
     st.session_state.chat_html = """
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -204,8 +206,6 @@ if "chat_html" not in st.session_state:
         }
     </script>
     """
-
-chat_placeholder = st.empty()  # persistent container
 
 def append_message(role, content):
     """Append message into persistent chat HTML."""
