@@ -329,19 +329,25 @@ with tab1:
             {"role": "system", "content": interview_prompt + interview_context},
             {"role": "assistant", "content": interview_question}
         ]
-        # Set a flag to indicate the interview has started and a message needs to be generated
-        st.session_state["interview_started"] = True
 
     if st.button("🎤 Begin Interview"):
         st.session_state["interview_name"] = name
         init_interview()
-        st.rerun() # Rerun once to show the initial message
 
-    # ------------- Chat Display Logic -------------
-    def display_chat_html(messages_to_display):
-        """Renders the chat history using the original HTML."""
+    # ------------- Chat Display -------------
+    chat_placeholder = st.empty()  # ✅ define early so it's always available
+
+    if st.session_state.get("messages"):
+        if "story_stages" in st.session_state:
+            stages = st.session_state["story_stages"]
+            total = len(stages)
+            covered = sum(1 for v in stages.values() if v)
+            progress = covered / total
+            st.markdown("##### __***Interview Progress:***__")
+            st.progress(progress)
+
         inner = ""
-        for msg in messages_to_display:
+        for msg in st.session_state.messages[1:]:
             if msg["role"] == "system":
                 continue
             role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
@@ -368,60 +374,50 @@ with tab1:
         </script>
         """
         components.html(chat_html, height=420, scrolling=False)
-
-    # Main chat UI logic
-    if st.session_state.get("messages"):
-        if "story_stages" in st.session_state:
-            stages = st.session_state["story_stages"]
-            total = len(stages)
-            covered = sum(1 for v in stages.values() if v)
-            progress = covered / total
-            st.markdown("##### __***Interview Progress:***__")
-            st.progress(progress)
-        
-        # Display the current chat state
-        display_chat_html(st.session_state.messages)
-
     # ------------- Message Processor -------------
     def process_message(user_input: str):
         if not user_input:
             return
 
-        # Append USER message to chat
+        # 1️⃣ Immediately append USER message to chat
         st.session_state.messages.append({"role": "user", "content": user_input})
-        
-        # Temporarily append a "thinking" message for display
-        st.session_state.messages.append({"role": "assistant", "content": "*Thinking...*"})
-        st.experimental_rerun() # Rerun to show the user message and thinking state
 
-    # This part of the code runs on the Rerun triggered by the user input
-    if st.session_state.get("messages") and st.session_state.messages[-1]["content"] == "*Thinking...*":
-        
-        # Remove the temporary "thinking" message
-        st.session_state.messages.pop()
+        # Render user message instantly
+        with chat_placeholder.container():
+            for msg in st.session_state.messages[1:]:
+                if msg["role"] == "system":
+                    continue
+                role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+                st.markdown(f"**{role}:** {msg['content']}")
+
+        # 2️⃣ Add assistant placeholder ("Thinking...")
+        thinking_placeholder = chat_placeholder.container()
+        with thinking_placeholder:
+            st.markdown("🧑‍💼 Interviewer: *Thinking...*")
 
         # ---- Background analysis ----
         all_vars_covered = True
         steering_instruction = ""
-        new_analysis = analyze_story_stages(
-            st.session_state.messages,
-            st.session_state['steering_model'],
-            st.session_state['steering_prompt']
-        )
-        if new_analysis:
-            st.session_state['story_stages'].update(new_analysis)
-            missing = [s for s, covered in st.session_state['story_stages'].items() if not covered]
-            if missing:
-                all_vars_covered = False
-                steering_instruction = f"Missing stages: {', '.join(missing)}."
+        with st.spinner("Analyzing..."):
+            new_analysis = analyze_story_stages(
+                st.session_state.messages,
+                st.session_state['steering_model'],
+                st.session_state['steering_prompt']
+            )
+            if new_analysis:
+                st.session_state['story_stages'].update(new_analysis)
+                missing = [s for s, covered in st.session_state['story_stages'].items() if not covered]
+                if missing:
+                    all_vars_covered = False
+                    steering_instruction = f"Missing stages: {', '.join(missing)}."
 
-        safeguarding_analysis = analyze_story_stages(
-            st.session_state.messages,
-            st.session_state['safeguarding_model'],
-            st.session_state['safeguarding_prompt']
-        )
-        if safeguarding_analysis:
-            st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
+            safeguarding_analysis = analyze_story_stages(
+                st.session_state.messages,
+                st.session_state['safeguarding_model'],
+                st.session_state['safeguarding_prompt']
+            )
+            if safeguarding_analysis:
+                st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
 
         # Steering logic
         if st.session_state['safeguarding_flag'] is True:
@@ -434,7 +430,7 @@ with tab1:
         # 3️⃣ Generate assistant reply
         temp_messages = st.session_state.messages.copy()
         temp_messages.append({"role": "system", "content": steering_instruction})
-        
+
         try:
             response = client.chat.completions.create(
                 model=st.session_state["interviewer_model"],
@@ -444,10 +440,18 @@ with tab1:
         except Exception as e:
             reply = f"⚠️ Error generating response: {e}"
 
-        # 4️⃣ Update assistant reply and display it
+        # Update assistant placeholder with actual reply
+        thinking_placeholder.empty()
         st.session_state.messages.append({"role": "assistant", "content": reply})
-        
-        # 5️⃣ Handle TTS (AFTER showing text)
+
+        with chat_placeholder.container():
+            for msg in st.session_state.messages[1:]:
+                if msg["role"] == "system":
+                    continue
+                role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+                st.markdown(f"**{role}:** {msg['content']}")
+
+        # 4️⃣ Handle TTS (AFTER showing text)
         if st.session_state.get("talk_back"):
             voice_id = st.session_state.get("voice_id", "pNInz6obpgDQGcFmaJgB")
             model_id = st.session_state.get("TTS_model", "eleven_multilingual_v2")
@@ -463,7 +467,7 @@ with tab1:
                     if isinstance(chunk, (bytes, bytearray)):
                         audio_bytes.write(chunk)
                 audio_bytes.seek(0)
-                
+
                 import base64
                 audio_b64 = base64.b64encode(audio_bytes.read()).decode()
                 audio_html = f"""
@@ -472,26 +476,29 @@ with tab1:
                 </audio>
                 """
                 st.markdown(audio_html, unsafe_allow_html=True)
+
             except Exception as e:
                 st.error(f"TTS playback failed: {e}")
-        
-        st.experimental_rerun() # Rerun one last time to clear the thinking state and show the final reply
 
-    # ------------- Chat Input Controls -------------
+
+    # ------------- Chat Input Controls (always visible once interview starts) -------------
     if st.session_state.get("messages"):
         st.checkbox("🔊 Interviewer should talk back", key="talk_back", value=True)
 
-        # Handle text input
-        prompt = st.chat_input("Type your reply...")
-        if prompt:
+        # Text input → rerun for smoothness
+        if prompt := st.chat_input("Type your reply..."):
             process_message(prompt)
+            st.rerun()
 
-        # Handle audio input
+        # Audio input → no rerun
         audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
         if audio_data is not None:
+            st.session_state.last_audio = audio_data.read()
+
+        if st.session_state.get("last_audio"):
             with st.spinner("Transcribing..."):
                 try:
-                    audio_bytes = BytesIO(audio_data.read())
+                    audio_bytes = BytesIO(st.session_state.last_audio)
                     transcript = voice_client.speech_to_text.convert(
                         file=audio_bytes,
                         model_id="scribe_v1",
@@ -500,6 +507,8 @@ with tab1:
                     process_message(transcript)
                 except Exception as e:
                     st.error(f"Transcription failed: {e}")
+                finally:
+                    st.session_state.last_audio = None  # clear after use
 
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
