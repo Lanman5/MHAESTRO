@@ -300,7 +300,7 @@ with tab1:
     if st.button("🎤 Begin Interview"):
         st.session_state["interview_name"] = name
         init_interview()
-        
+
     # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
         if "story_stages" in st.session_state:
@@ -441,16 +441,14 @@ with tab1:
                         st.error(f"Error occurred while playing sound: {e}")
 
         # Standard text input with callback
-        st.chat_input("Type your reply...", on_submit=handle_user_input, key="chat_input")
-
-        # 🎙️ Audio input option
-        audio_input = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
-
-        # Process audio input with a dedicated button
-        if st.button("Transcribe and Send Audio"):
-            if audio_input is not None:
+        st.chat_input("Type your reply...", on_submit=handle_user_input)
+        
+        # New audio input with callback
+        def handle_audio_change():
+            audio_data = st.session_state.audio_input_interview
+            if audio_data is not None:
                 with st.spinner("Transcribing..."):
-                    audio_bytes = BytesIO(audio_input.read())
+                    audio_bytes = BytesIO(audio_data.read())
                     try:
                         transcript = voice_client.speech_to_text.convert(
                             file=audio_bytes,
@@ -460,6 +458,10 @@ with tab1:
                         handle_user_input(transcript)
                     except Exception as e:
                         st.error(f"Transcription failed: {e}")
+        
+        # 🎙️ Audio input option with an on_change callback
+        st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview", on_change=handle_audio_change)
+
 
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
