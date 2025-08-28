@@ -330,7 +330,7 @@ with tab1:
         st.session_state["interview_name"] = name
         init_interview()
 
-    # ------------- Single Chat Component -------------
+    # ------------- Single Chat Placeholder -------------
     if 'chat_placeholder' not in st.session_state:
         st.session_state['chat_placeholder'] = st.empty()
 
@@ -345,7 +345,7 @@ with tab1:
 
         chat_html = f"""
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-        <div id="chat-container" style="
+        <div style="
             height:400px; 
             overflow-y:auto; 
             padding:10px; 
@@ -356,22 +356,25 @@ with tab1:
             border-radius: 8px;
         ">{inner}</div>
         <script>
-            const el = document.getElementById('chat-container');
+            const el = document.querySelector('div[style*="overflow-y:auto"]');
             if (el) {{
                 el.scrollTo({{ top: el.scrollHeight, behavior: 'smooth' }});
             }}
         </script>
         """
-        st.session_state['chat_placeholder'].html(chat_html, height=420, scrolling=False)
+
+        st.session_state['chat_placeholder'].markdown(chat_html, unsafe_allow_html=True)
 
     # ------------- Message Processor -------------
     def process_message(user_input: str):
         if not user_input:
             return
 
+        # Append user message and render
         st.session_state.messages.append({"role": "user", "content": user_input})
         render_chat()
 
+        # Analyze conversation
         all_vars_covered = True
         steering_instruction = ""
         with st.spinner("Analyzing..."):
@@ -402,6 +405,7 @@ with tab1:
         else:
             steering_instruction += " Focus your next question to guide the participant toward one of the missing stages, while still following the interview framework and maintaining empathy and depth."
 
+        # Generate assistant reply
         temp_messages = st.session_state.messages.copy()
         temp_messages.append({"role": "system", "content": steering_instruction})
         try:
@@ -413,6 +417,7 @@ with tab1:
         except Exception as e:
             reply = f"⚠️ Error generating response: {e}"
 
+        # Append assistant message, render, then TTS
         st.session_state.messages.append({"role": "assistant", "content": reply})
         render_chat()
 
