@@ -261,9 +261,9 @@ if "config_initialized" not in st.session_state:
 
     })
 
-for key, value in st.session_state.items():
-    logging.debug(f"{key}: {value}")
-    
+st.write(f"Session state keys: {list(st.session_state.keys())}")
+st.write(f"Has steering_model: {'steering_model' in st.session_state}")
+
 tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Configuration"])
 
 with tab1:
@@ -393,8 +393,9 @@ with tab1:
             all_vars_covered = True
             steering_parts = []
 
-            for key, value in st.session_state.items():
-                logging.debug(f"{key}: {value}")
+# Add before the problematic line
+            st.write(f"Session state keys: {list(st.session_state.keys())}")
+            st.write(f"Has steering_model: {'steering_model' in st.session_state}")
 
             with st.spinner("Thinking..."):
                 new_analysis = analyze_story_stages(st.session_state.messages, st.session_state['steering_model'],st.session_state['steering_prompt'])
@@ -521,7 +522,7 @@ with tab1:
 with tab2:
     if 'analysis' not in st.session_state:
         st.subheader("⚠️INTERVIEW NOT FOUND!", divider = "red")
-        st.markdown("#### *Please complete an interview in the preivous tab so it can be analysed for storytelling or upload your own transcript below!*")
+        st.markdown("#### *Please complete an interview in the previous tab so it can be analysed for storytelling or upload your own transcript below!*")
 
         user_transcript = st.file_uploader(
         "Upload your own transcript:", 
