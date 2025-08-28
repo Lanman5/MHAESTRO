@@ -390,6 +390,9 @@ with tab1:
             all_vars_covered = True
             steering_parts = []
 
+            for key, value in st.session_state.items():
+                logging.debug(f"{key}: {value}")
+
             with st.spinner("Thinking..."):
                 new_analysis = analyze_story_stages(st.session_state.messages, st.session_state['steering_model'],st.session_state['steering_prompt'])
                 if new_analysis:
