@@ -419,12 +419,12 @@ with tab1:
                 st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
 
         # Steering logic
-        if st.session_state.get('safeguarding_flag') is True:
-            steering_instruction = "Safeguarding risk detected. End interview immediately."
+        if st.session_state['safeguarding_flag'] is True:
+            steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
         elif all_vars_covered:
-            steering_instruction = "All stages covered. Wrap up politely."
-        elif not steering_instruction:
-            steering_instruction = "Guide towards missing stages with empathy."
+            steering_instruction = "All criteria have been covered. Please thank the interviewee and ask them if there's anything they'd like to add before ending the interview."
+        else:
+            steering_instruction += " Focus your next question to guide the participant toward one of the missing stages, while still following the interview framework and maintaining empathy and depth."
 
         # 3️⃣ Generate assistant reply
         temp_messages = st.session_state.messages.copy()
