@@ -348,49 +348,55 @@ with tab1:
             "🔊 Bot speaks replies", value=st.session_state.bot_voice_enabled, 
             help="Toggle whether the interviewer also speaks aloud")
     
-    # ------------------- Chat Input -------------------
+    #chat input
     if st.session_state.get("messages"):
         st.markdown("🎤 Or record your reply below:")
 
-        # Replace st.audio_input with streamlit-audiorecorder
-        audio = audiorecorder("🎙️ Click to record", "⏹️ Click to stop recording")
-        
-        user_text = None
+        try:
+            # Native Streamlit audio input with error handling
+            audio_file = st.audio_input("Record your reply")
+            
+            user_text = None
 
-        # --- Speech-to-Text (ElevenLabs) ---
-        if len(audio) > 0:
-            # Create unique key to avoid reprocessing same audio
-            audio_key = f"audio_{len(st.session_state.messages)}"
-            if audio_key not in st.session_state:
-                st.session_state[audio_key] = True
-                
-                # Convert audio to bytes for ElevenLabs
-                audio_bytes = audio.export(format="wav").read()
+            if audio_file:
+                # Create unique key to avoid reprocessing
+                audio_key = f"audio_{len(st.session_state.messages)}"
+                if audio_key not in st.session_state:
+                    st.session_state[audio_key] = True
+                    
+                    audio_bytes = audio_file.read()
 
-                files = {
-                    "file": ("audio.wav", audio_bytes, "audio/wav")
-                }
-                data = {
-                    "model_id": "scribe_v1", 
-                }
+                    files = {
+                        "file": ("audio.wav", audio_bytes, "audio/wav")
+                    }
+                    data = {
+                        "model_id": "scribe_v1", 
+                    }
 
-                with st.spinner("Converting speech to text..."):
-                    stt_response = requests.post(
-                        "https://api.elevenlabs.io/v1/speech-to-text",
-                        headers={"xi-api-key": os.getenv("ELEVENLABS_API_KEY")},
-                        files=files,
-                        data=data
-                    )
+                    with st.spinner("Converting speech to text..."):
+                        stt_response = requests.post(
+                            "https://api.elevenlabs.io/v1/speech-to-text",
+                            headers={"xi-api-key": os.getenv("ELEVENLABS_API_KEY")},
+                            files=files,
+                            data=data
+                        )
 
-                    if stt_response.status_code == 200:
-                        user_text = stt_response.json().get("text", "")
-                        if user_text:
-                            logging.debug(f"🎙️ User said: {user_text}")
-                            st.success(f"Transcribed: {user_text}")
+                        if stt_response.status_code == 200:
+                            user_text = stt_response.json().get("text", "")
+                            if user_text:
+                                logging.debug(f"🎙️ User said: {user_text}")
+                                st.success(f"Transcribed: {user_text}")
                         else:
-                            st.warning("No speech detected in recording")
-                    else:
-                        st.error(f"STT failed: {stt_response.text}")
+                            st.error(f"STT failed: {stt_response.text}")
+                            
+        except Exception as e:
+            st.error(f"Audio recording error: {e}")
+            st.info("Please try typing your response instead.")
+
+    # Typed input fallback
+    if not user_text:
+        if typed := st.chat_input("Type your reply..."):
+            user_text = typed
 
         # --- Or typed input ---
         if not user_text:
