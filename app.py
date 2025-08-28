@@ -185,19 +185,10 @@ def play_sound(text, key, voice_id):
     except Exception as e:
         st.error(f"Error occurred while playing sound: {e}")
 # ---------- Safe wrapper for audio_input ----------
-def safe_audio_input(label, key="audio_data", **kwargs):
-    # Ensure key exists first
+def safe_audio_input(label, key="user_audio", **kwargs):
     if key not in st.session_state:
         st.session_state[key] = None
-
-    # Use a container so Streamlit doesn't try to reset session state internally
-    with st.container():
-        audio = st.audio_input(label, key=key, **kwargs)  # explicitly set key
-
-    # Only update if new audio is captured
-    if audio is not None:
-        st.session_state[key] = audio
-
+    st.audio_input(label, key=key, **kwargs)
     return st.session_state[key]
 
 prompt_list = read_csv()
