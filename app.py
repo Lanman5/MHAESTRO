@@ -13,6 +13,7 @@ from elevenlabs import VoiceSettings
 from datetime import datetime
 import requests
 import base64
+from audiorecorder import audiorecorder
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -189,6 +190,7 @@ if not prompt_list:
     st.error("Failed to read prompts.")
     st.stop()
 
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "config_initialized" not in st.session_state:
@@ -261,9 +263,6 @@ if "config_initialized" not in st.session_state:
 
     })
 
-st.write(f"Session state keys: {list(st.session_state.keys())}")
-st.write(f"Has steering_model: {'steering_model' in st.session_state}")
-
 tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Configuration"])
 
 with tab1:
@@ -279,7 +278,6 @@ with tab1:
             st.session_state["interview_name"] = name
 
             # Clear only relevant keys
-
             for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended"]:
                 st.session_state.pop(key, None)
             interview_context = ""
@@ -349,53 +347,61 @@ with tab1:
         st.session_state.bot_voice_enabled = st.checkbox(
             "🔊 Bot speaks replies", value=st.session_state.bot_voice_enabled, 
             help="Toggle whether the interviewer also speaks aloud")
+    
     # ------------------- Chat Input -------------------
     if st.session_state.get("messages"):
         st.markdown("🎤 Or record your reply below:")
 
-        # Native Streamlit audio input
-        audio_file = st.audio_input("Record your reply")
-
+        # Replace st.audio_input with streamlit-audiorecorder
+        audio = audiorecorder("🎙️ Click to record", "⏹️ Click to stop recording")
+        
         user_text = None
 
         # --- Speech-to-Text (ElevenLabs) ---
-        if audio_file:
-            audio_bytes = audio_file.read()  # Raw audio bytes
+        if len(audio) > 0:
+            # Create unique key to avoid reprocessing same audio
+            audio_key = f"audio_{len(st.session_state.messages)}"
+            if audio_key not in st.session_state:
+                st.session_state[audio_key] = True
+                
+                # Convert audio to bytes for ElevenLabs
+                audio_bytes = audio.export(format="wav").read()
 
-            files = {
-                "file": ("audio.wav", audio_bytes, "audio/wav")
-            }
-            data = {
-                "model_id": "scribe_v1", 
-            }
+                files = {
+                    "file": ("audio.wav", audio_bytes, "audio/wav")
+                }
+                data = {
+                    "model_id": "scribe_v1", 
+                }
 
-            stt_response = requests.post(
-                "https://api.elevenlabs.io/v1/speech-to-text",
-                headers={"xi-api-key": os.getenv("ELEVENLABS_API_KEY")},
-                files=files,
-                data=data
-            )
+                with st.spinner("Converting speech to text..."):
+                    stt_response = requests.post(
+                        "https://api.elevenlabs.io/v1/speech-to-text",
+                        headers={"xi-api-key": os.getenv("ELEVENLABS_API_KEY")},
+                        files=files,
+                        data=data
+                    )
 
-            if stt_response.status_code == 200:
-                user_text = stt_response.json().get("text", "")
-                logging.debug(f"🎙️ User said: {user_text}")
-            else:
-                st.error(f"STT failed: {stt_response.text}")
+                    if stt_response.status_code == 200:
+                        user_text = stt_response.json().get("text", "")
+                        if user_text:
+                            logging.debug(f"🎙️ User said: {user_text}")
+                            st.success(f"Transcribed: {user_text}")
+                        else:
+                            st.warning("No speech detected in recording")
+                    else:
+                        st.error(f"STT failed: {stt_response.text}")
 
         # --- Or typed input ---
         if not user_text:
             if typed := st.chat_input("Type your reply..."):
                 user_text = typed
 
-        # Append message if we have one
+        # Append message if it exists 
         if user_text:
             st.session_state.messages.append({"role": "user", "content": user_text})
             all_vars_covered = True
             steering_parts = []
-
-# Add before the problematic line
-            st.write(f"Session state keys: {list(st.session_state.keys())}")
-            st.write(f"Has steering_model: {'steering_model' in st.session_state}")
 
             with st.spinner("Thinking..."):
                 new_analysis = analyze_story_stages(st.session_state.messages, st.session_state['steering_model'],st.session_state['steering_prompt'])
@@ -449,7 +455,6 @@ with tab1:
                     </audio>
                     """
                     st.markdown(audio_html, unsafe_allow_html=True)
-
 
             # 7. Refresh UI
             st.rerun()
