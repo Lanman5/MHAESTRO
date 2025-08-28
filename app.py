@@ -13,6 +13,9 @@ from elevenlabs import VoiceSettings
 from datetime import datetime
 import requests
 import base64
+from streamlit_webrtc import webrtc_streamer, AudioProcessorBase
+import numpy as np
+import av
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -86,7 +89,27 @@ if not chat_models:
 class SafeDict(dict):
     def __missing__(self, key):
         return f"{{{key}}}"
-    
+
+class AudioProcessor(AudioProcessorBase):
+    def __init__(self):
+        self.recorded_frames = []
+    def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
+        # Collect raw frames
+        self.recorded_frames.append(frame.to_ndarray().tobytes())
+        return frame
+
+def get_audio_bytes_from_frames(frames, sample_rate=16000, sample_width=2, channels=1):
+    import io, wave
+    audio_buffer = io.BytesIO()
+    wf = wave.open(audio_buffer, 'wb')
+    wf.setnchannels(channels)
+    wf.setsampwidth(sample_width)
+    wf.setframerate(sample_rate)
+    wf.writeframes(b''.join(frames))
+    wf.close()
+    audio_buffer.seek(0)
+    return audio_buffer.read()    
+
 def read_file(input_file):
     if input_file is None:
         return "ERROR: No file provided."
@@ -296,82 +319,36 @@ with tab1:
             {"role": "assistant", "content": interview_question}
         ]
 
-# ------------------- Chat Display -------------------
-    if st.session_state.get("messages"):
-        if "story_stages" in st.session_state:
-            stages = st.session_state["story_stages"]
-            total = len(stages)
-            covered = sum(1 for v in stages.values() if v)
-            progress = covered / total
-
-            st.markdown("##### __***Interview Progress:***__")
-            st.progress(progress) 
-        inner = ""
-        for msg in st.session_state.messages[1:]:
-            if msg["role"] == "system":
-                continue
-            role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
-            content = escape(msg["content"]).replace("\n", "<br>")
-            inner += f"<p><strong>{role}:</strong><br>{content}</p><hr>"
-
-        chat_html = f"""
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-        <div id="chat-container" style="
-            height:400px; 
-            overflow-y:auto; 
-            padding:10px; 
-            font-family: 'Inter', sans-serif;
-            font-size: 14px;
-            line-height: 1.5;
-            background-color: #f9f9f9;
-            border-radius: 8px;
-        ">
-            {inner}
-        </div>
-        <script>
-            const el = document.getElementById('chat-container');
-            if (el) {{
-                el.scrollTo({{ top: el.scrollHeight, behavior: 'smooth' }});
-            }}
-        </script>
-        """
-
-        # Render chat + auto-scroll
-        components.html(chat_html, height=420, scrolling=False)
-
-        # Voice toggle directly under chat
-        if "bot_voice_enabled" not in st.session_state:
-            st.session_state.bot_voice_enabled = True  # default on
-
-        st.session_state.bot_voice_enabled = st.checkbox(
-            "🔊 Bot speaks replies", value=st.session_state.bot_voice_enabled, 
-            help="Toggle whether the interviewer also speaks aloud")
-    
-    #chat input
+    # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
         st.markdown("🎤 Or record your reply below:")
 
         user_text = None
 
-        try:
-            # Native Streamlit audio input with error handling
-            audio_file = st.audio_input("Record your reply")
-            
-            if audio_file:
-                # Create unique key to avoid reprocessing
-                audio_key = f"audio_{len(st.session_state.messages)}"
-                if audio_key not in st.session_state:
-                    st.session_state[audio_key] = True
-                    
-                    audio_bytes = audio_file.read()
+        # --- Streamlit WebRTC audio input ---
+        webrtc_ctx = webrtc_streamer(
+            key="speech-to-text",
+            mode="SENDRECV",
+            audio_receiver_size=1024,
+            rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+            media_stream_constraints={"audio": True, "video": False},
+            async_processing=True,
+            audio_processor_factory=AudioProcessor,
+        )
 
+        if webrtc_ctx.state.playing:
+            st.write("Recording... Speak now!")
+        if hasattr(webrtc_ctx, "audio_processor") and webrtc_ctx.audio_processor:
+            if st.button("Transcribe Audio"):
+                frames = webrtc_ctx.audio_processor.recorded_frames
+                if frames:
+                    audio_bytes = get_audio_bytes_from_frames(frames)
                     files = {
                         "file": ("audio.wav", audio_bytes, "audio/wav")
                     }
                     data = {
                         "model_id": "scribe_v1", 
                     }
-
                     with st.spinner("Converting speech to text..."):
                         stt_response = requests.post(
                             "https://api.elevenlabs.io/v1/speech-to-text",
@@ -379,7 +356,6 @@ with tab1:
                             files=files,
                             data=data
                         )
-
                         if stt_response.status_code == 200:
                             user_text = stt_response.json().get("text", "")
                             if user_text:
@@ -389,11 +365,8 @@ with tab1:
                                 st.warning("No speech detected in recording")
                         else:
                             st.error(f"STT failed: {stt_response.text}")
-                            
-        except Exception as e:
-            st.error(f"Audio recording error: {e}")
-            st.info("Please try typing your response instead.")
-
+                    # Optional: reset frames for next message
+                    webrtc_ctx.audio_processor.recorded_frames = []
         # Typed input fallback (only if no audio text was captured)
         if not user_text:
             if typed := st.chat_input("Type your reply..."):
@@ -406,14 +379,22 @@ with tab1:
             steering_parts = []
 
             with st.spinner("Thinking..."):
-                new_analysis = analyze_story_stages(st.session_state.messages, st.session_state['steering_model'],st.session_state['steering_prompt'])
+                new_analysis = analyze_story_stages(
+                    st.session_state.messages, 
+                    st.session_state['steering_model'],
+                    st.session_state['steering_prompt']
+                )
                 if new_analysis:
                     st.session_state['story_stages'].update(new_analysis)
                     missing = [s for s, covered in st.session_state['story_stages'].items() if not covered]
                     if missing:
                         all_vars_covered = False
                         steering_parts.append(f"The following stages have not been meaningfully covered: {', '.join(missing)}.")
-                safeguarding_analysis = analyze_story_stages(st.session_state.messages, st.session_state['safeguarding_model'], st.session_state['safeguarding_prompt'])
+                safeguarding_analysis = analyze_story_stages(
+                    st.session_state.messages,
+                    st.session_state['safeguarding_model'],
+                    st.session_state['safeguarding_prompt']
+                )
                 if safeguarding_analysis:
                     st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
 
@@ -424,9 +405,8 @@ with tab1:
                     steering_instruction = "All criteria have been covered. Please thank the interviewee and ask them if there's anything they'd like to add before ending the interview."
                 else:
                     steering_instruction = (" ".join(steering_parts) + " Focus your next question to guide the participant toward one of these missing stages, while still following the interview framework and maintaining empathy and depth.")
-                # 4. Send steering instruction to main interviewer
                 temp_messages = st.session_state.messages.copy()
-                if steering_instruction:  # Only add if we have bots
+                if steering_instruction:
                     temp_messages.append({"role": "system", "content": steering_instruction})
                 logging.debug(temp_messages)
 
@@ -450,7 +430,6 @@ with tab1:
                 play_sound(reply, key="last_reply", voice_id=list(voice_options.values())[0])
                 if "last_reply_audio" in st.session_state:
                     audio_bytes = st.session_state["last_reply_audio"]
-
                     audio_html = f"""
                     <audio autoplay>
                         <source src="data:audio/mp3;base64,{base64.b64encode(audio_bytes).decode()}" type="audio/mp3">
@@ -461,7 +440,7 @@ with tab1:
             # 7. Refresh UI
             st.rerun()
 
-        # Interview end controls (outside the message processing block)
+        # Interview end controls and logic
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
 

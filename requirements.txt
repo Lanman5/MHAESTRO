@@ -3,3 +3,7 @@ openai
 elevenlabs
 requests
 streamlit-audiorecorder
+streamlit-webrtc
+av
+numpy
+pydub
