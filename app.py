@@ -330,7 +330,10 @@ with tab1:
         st.session_state["interview_name"] = name
         init_interview()
 
-    # ------------- Chat Display Helper -------------
+    # ------------- Single Chat Component -------------
+    if 'chat_placeholder' not in st.session_state:
+        st.session_state['chat_placeholder'] = st.empty()
+
     def render_chat():
         inner = ""
         for msg in st.session_state.messages[1:]:
@@ -359,18 +362,16 @@ with tab1:
             }}
         </script>
         """
-        components.html(chat_html, height=420, scrolling=False)
+        st.session_state['chat_placeholder'].html(chat_html, height=420, scrolling=False)
 
     # ------------- Message Processor -------------
     def process_message(user_input: str):
         if not user_input:
             return
 
-        # Add USER message immediately
         st.session_state.messages.append({"role": "user", "content": user_input})
         render_chat()
 
-        # Analyze conversation state
         all_vars_covered = True
         steering_instruction = ""
         with st.spinner("Analyzing..."):
@@ -401,7 +402,6 @@ with tab1:
         else:
             steering_instruction += " Focus your next question to guide the participant toward one of the missing stages, while still following the interview framework and maintaining empathy and depth."
 
-        # Generate assistant reply
         temp_messages = st.session_state.messages.copy()
         temp_messages.append({"role": "system", "content": steering_instruction})
         try:
@@ -413,11 +413,9 @@ with tab1:
         except Exception as e:
             reply = f"⚠️ Error generating response: {e}"
 
-        # Show interviewer message
         st.session_state.messages.append({"role": "assistant", "content": reply})
         render_chat()
 
-        # Play TTS after text is shown
         if st.session_state.get("talk_back"):
             voice_id = st.session_state.get("voice_id", "pNInz6obpgDQGcFmaJgB")
             model_id = st.session_state.get("TTS_model", "eleven_multilingual_v2")
@@ -453,7 +451,7 @@ with tab1:
 
         if prompt := st.chat_input("Type your reply..."):
             process_message(prompt)
-            st.rerun()  # only safe for text
+            st.rerun()
 
         audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
         if audio_data is not None:
