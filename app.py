@@ -39,10 +39,6 @@ check_password()
 
 st.set_page_config(page_title="Spirit Engine 2.0", page_icon="🧠", layout="centered")
 
-# ---------- Access all keys early to prevent a wipe ----------
-for k in st.session_state.keys():
-    _ = st.session_state[k]
-
 st.title("🎙️Interviewer and Storyteller📖")
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -190,21 +186,18 @@ def play_sound(text, key, voice_id):
         st.error(f"Error occurred while playing sound: {e}")
 # ---------- Safe wrapper for audio_input ----------
 def safe_audio_input(label, key="audio_data", **kwargs):
-    # Snapshot existing keys
-    session_snapshot = dict(st.session_state)
+    # Check if audio data already exists in session state
+    if key not in st.session_state:
+        st.session_state[key] = None
 
+    # Capture new audio input
     audio = st.audio_input(label, **kwargs)
 
-    # Restore missing keys except the audio key
-    for k, v in session_snapshot.items():
-        if k not in st.session_state and k != key:
-            st.session_state[k] = v
-
-    # Store new audio only if available
+    # Update session state only if new audio is recorded
     if audio is not None:
         st.session_state[key] = audio
 
-    return st.session_state.get(key)
+    return st.session_state[key]
 
 prompt_list = read_csv()
 if not prompt_list:
