@@ -2,3 +2,4 @@ streamlit
 requests
 openai
 elevenlabs
+streamlit-javascript
