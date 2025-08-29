@@ -21,6 +21,8 @@ logging.basicConfig(
 
 AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
 
+chat_placeholder = st.empty()  # persistent container
+
 def check_password():
     """Simple password protection."""
     if "authenticated" not in st.session_state:
@@ -43,6 +45,7 @@ st.title("🎙️Interviewer and Storyteller📖")
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+
 # Fetch all available voices dynamically
 voice_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 voices_response = voice_client.voices.search()
@@ -59,7 +62,7 @@ def get_model_list():
     except Exception as e:
         st.error(f"Failed to fetch models: {e}")
         return []
-
+    
 def get_elevenlabs_model_list():
     try:
         models = voice_client.models.list()
@@ -80,11 +83,12 @@ if not chat_models:
     st.error("No models available. Please check your OpenAI API credentials or network connection.")
     st.stop()
 
+
 #functions:
 class SafeDict(dict):
     def __missing__(self, key):
         return f"{{{key}}}"
-
+    
 def read_file(input_file):
     if input_file is None:
         return "ERROR: No file provided."
@@ -98,12 +102,13 @@ def read_file(input_file):
         return StringIO(input_file.getvalue().decode("utf-8")).read()
     except Exception as e:
         return f"ERROR reading uploaded file: {e}"
-
+    
 def generate_transcript(messages, user_name="User"):
     transcript = ""
     for msg in messages[1:]:
         if msg["role"] == "system":
             continue
+            #role = "prompt"
         elif msg["role"] == "assistant":
             role = "Interviewer"
         else:
@@ -112,23 +117,36 @@ def generate_transcript(messages, user_name="User"):
         content = msg["content"]
         transcript += f"{role}: {content}\n\n"
     return transcript
-
 def json_check(text):
+#attempts to get rid of any trailing context text returned by AI before json.
     match = re.search(r"\{.*?\}", text, re.S)
     if not match:
         logging.warning("No JSON object found in model output.")
         return {}
-
+    
     json_str = match.group(0)
     try:
         return json.loads(json_str)
     except json.JSONDecodeError as e:
         logging.warning(f"JSON decoding failed: {e}")
         return {}
+    
+def analyze_story_stages(messages, analysis_model, analysis_prompt):
+    transcript = generate_transcript(messages)
+
+    response = client.chat.completions.create(
+        model=analysis_model,
+        messages=[
+            {"role": "system", "content": analysis_prompt},
+            {"role": "user", "content": "Carry out the analysis as specified in the framework above using this transcript:" +transcript}])
+
+    result = response.choices[0].message.content
+    logging.debug("Raw analysis result: %s", result)
+    return json_check(result)
 
 def read_csv():
     DEFAULT_FILE_PATH = "default_prompts.csv"
-    string_data = None
+    string_data = None  
     if os.path.exists(DEFAULT_FILE_PATH):
         with open(DEFAULT_FILE_PATH, 'r', encoding='utf-8') as f:
             string_data = StringIO(f.read())
@@ -146,6 +164,15 @@ def read_csv():
             return
 
 def autoplay_html_audio(audio_obj, mime_type="audio/mp3"):
+    """
+    Embed <audio autoplay> with base64 audio.
+    Works for:
+    - raw bytes
+    - BytesIO / file-like
+    - StreamingResponse
+    - generator (chunked streaming)
+    """
+    # Handle generator: combine all chunks into bytes
     if hasattr(audio_obj, "__iter__") and not isinstance(audio_obj, (bytes, bytearray)):
         audio_bytes = b"".join(audio_obj)
     elif hasattr(audio_obj, "read"):
@@ -153,7 +180,7 @@ def autoplay_html_audio(audio_obj, mime_type="audio/mp3"):
     elif hasattr(audio_obj, "content"):
         audio_bytes = audio_obj.content
     else:
-        audio_bytes = audio_obj
+        audio_bytes = audio_obj  # assume raw bytes
 
     b64 = base64.b64encode(audio_bytes).decode()
     html_audio = f"""
@@ -163,7 +190,40 @@ def autoplay_html_audio(audio_obj, mime_type="audio/mp3"):
     """
     components.html(html_audio, height=0)
 
-def play_sound(text, voice_id):
+# ---------------- Chat render function ----------------
+def render_chat():
+    inner = ""
+    for msg in st.session_state.messages[1:]:  # skip system
+        if msg["role"] == "system":
+            continue
+        role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+        content = escape(msg["content"]).replace("\n", "<br>")
+        inner += f"<p><strong>{role}:</strong><br>{content}</p><hr>"
+
+    chat_html = f"""
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <div id="chat-container" style="
+        height:400px; 
+        overflow-y:auto; 
+        padding:10px; 
+        font-family: 'Inter', sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        background-color: #f9f9f9;
+        border-radius: 8px;
+    ">
+        {inner}
+    </div>
+    <script>
+        const el = document.getElementById('chat-container');
+        if (el) {{
+            el.scrollTo({{ top: el.scrollHeight, behavior: 'smooth' }});
+        }}
+    </script>
+    """
+    components.html(chat_html, height=420, scrolling=False)
+
+def play_sound(text, key, voice_id):
     try:
         response = voice_client.text_to_speech.convert(
             text=text,
@@ -177,8 +237,12 @@ def play_sound(text, voice_id):
                 use_speaker_boost=True
             )
         )
+
+        # Combine chunks into bytes
         audio_bytes = b"".join(response)
-        autoplay_html_audio(audio_bytes)
+        
+        st.session_state[f"{key}_audio"] = audio_bytes
+
     except Exception as e:
         st.error(f"Error occurred while playing sound: {e}")
 
@@ -191,6 +255,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "config_initialized" not in st.session_state:
     if prompt_list and len(prompt_list) < 17:
+
         st.error("Insufficient prompts in Default CSV configuration. Please ensure at least 17 entries.")
         st.stop()
 
@@ -200,53 +265,74 @@ if "config_initialized" not in st.session_state:
     init_file_data.append({"title": prompt_list[12][0], "content": read_file(prompt_list[12][1])})
 
     st.session_state.update({
+        #files 
         "titled_prereq_files": init_file_data,
+        # Interviewer
         "interview_prompt": prompt_list[0][1],
         "first_question": prompt_list[1][1],
         "interviewer_model": default_model,
-        "interview_selected_files": [prompt_list[10][0], prompt_list[11][0], prompt_list[12][0]],
+        "interview_selected_files": [prompt_list[10][0],prompt_list[11][0],prompt_list[12][0]],
+
+        # Analysis
         "analysis_system_prompt": prompt_list[2][1],
         "analysis_init_prompt": prompt_list[3][1],
         "analysis_model": default_model,
         "analysis_selected_files": [],
+
+        #First person narrative
         "narrative_system_prompt": prompt_list[15][1],
         "narrative_init_prompt": prompt_list[16][1],
+
+        # Adult Stories
         "adult_system_prompt": prompt_list[4][1],
         "adult_init_prompt": prompt_list[5][1],
-        "adult_story_files": [prompt_list[10][0], prompt_list[11][0], prompt_list[12][0]],
+        "adult_story_files": [prompt_list[10][0],prompt_list[11][0],prompt_list[12][0]],
+
+        # Child Stories
         "child_system_prompt": prompt_list[6][1],
         "child_init_prompt": prompt_list[7][1],
-        "child_story_files": [prompt_list[10][0], prompt_list[11][0], prompt_list[12][0]],
+        "child_story_files":[prompt_list[10][0],prompt_list[11][0],prompt_list[12][0]],
+
+        # EYFS Stories
         "eyfs_system_prompt": prompt_list[8][1],
         "eyfs_init_prompt": prompt_list[9][1],
-        "eyfs_story_files": [prompt_list[10][0], prompt_list[11][0], prompt_list[12][0]],
+        "eyfs_story_files": [prompt_list[10][0],prompt_list[11][0],prompt_list[12][0]],
+
+        #assistant bots
         "steering_prompt": prompt_list[13][1],
         "safeguarding_prompt": prompt_list[14][1],
+
         "story_model_select": default_model,
         "steering_model": default_model,
         "safeguarding_model": default_model,
-        "story_stages": {
-            "Moment": False,
-            "Details": False,
-            "Realisation": False,
-            "Change": False,
-            "Resolution": False
+
+        "story_stages":{
+        "Moment": False,
+        "Details": False,
+        "Realisation": False,
+        "Change": False,
+        "Resolution": False
         },
-        "safeguarding_flag": False,
+
+        "safeguarding_flag" : False,
+
         "config_initialized": True,
-        "TTS_model": "eleven_multilingual_v2"
+
+        #tts config
+        "TTS_model": "eleven_multilingual_v2" #set a default
+
     })
 
-tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling", "⚙️ Configuration"])
+tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Configuration"])
 
 with tab1:
     st.title("🗣️Interviewer")
     name = st.text_input("Enter your Name")
-    
-    speak_flag = False
+
     if voice_options:
         selected_voice_name = st.selectbox("Select Voice:", list(voice_options.keys()))
         st.session_state.interview_voice_id = voice_options[selected_voice_name]
+        # Always show speak checkbox once interview has started
         speak_flag = st.checkbox("🔊 Speak replies aloud", key="speak_flag", value=True)
     else:
         st.info("No voices found in your ElevenLabs account. Please add a voice in ElevenLabs to enable text-to-speech features.")
@@ -256,9 +342,12 @@ with tab1:
             st.warning("Please enter your name to start the interview.")
         else:
             st.session_state["interview_name"] = name
-            for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended", "story_stages"]:
+
+            # Clear only relevant keys
+            for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended"]:
                 st.session_state.pop(key, None)
-            
+
+            # Build context
             interview_context = ""
             for selected_title in st.session_state["interview_selected_files"]:
                 for file_obj in st.session_state["titled_prereq_files"]:
@@ -266,35 +355,36 @@ with tab1:
                         interview_context += f"\n\n----------{file_obj['title']}----------\n"
                         interview_context += file_obj["content"]
 
+            # Prepare prompts
             interview_prompt_template = st.session_state["interview_prompt"]
             interview_prompt = interview_prompt_template.format_map(SafeDict(name=name))
             interview_question_template = st.session_state["first_question"]
             interview_question = interview_question_template.format_map(SafeDict(name=name))
 
+            # Initialise messages
             st.session_state.messages = [
                 {"role": "system", "content": interview_prompt + interview_context},
                 {"role": "assistant", "content": interview_question}
             ]
             st.session_state.interview_ended = False
-            st.session_state["interview_start_time"] = datetime.now()
 
             st.success("Interview started!")
 
+            # Autoplay first interviewer question if checkbox is ticked
             if speak_flag:
                 with st.spinner("Generating voice..."):
-                    play_sound(interview_question, st.session_state.interview_voice_id)
+                    audio = voice_client.text_to_speech.convert(
+                        text=interview_question,
+                        voice_id=st.session_state.interview_voice_id,
+                        model_id="eleven_multilingual_v2"
+                    )
+                    autoplay_html_audio(audio)
 
-    # Display chat history with native elements
-    for msg in st.session_state.messages:
-        if msg["role"] == "system":
-            continue
-        
-        role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state.get('interview_name', 'User')}"
-        
-        with st.chat_message(msg["role"], avatar="🧑‍💼" if msg["role"] == "assistant" else "🙋"):
-            st.markdown(msg["content"])
-            
-    # Handle chat input
+    # ------------------- Display chat -------------------
+    if st.session_state.get("messages"):
+        render_chat()
+
+    # ------------------- Chat Input -------------------
     if st.session_state.get("messages") and not st.session_state.get("interview_ended", False):
         st.markdown("### Your Reply")
 
@@ -302,8 +392,9 @@ with tab1:
         with col1:
             text_prompt = st.chat_input("Type your reply...")
         with col2:
-            audio_prompt = st.file_uploader("🎙️ Speak your reply", type=["mp3", "m4a", "wav"], key="audio_uploader")
+            audio_prompt = st.audio_input("🎙️ Speak your reply")
 
+        # Determine which input to use
         prompt = None
         if text_prompt:
             prompt = text_prompt
@@ -316,53 +407,58 @@ with tab1:
                 prompt = transcription.text
 
         if prompt:
+            # 1️⃣ Append user message and render immediately
             st.session_state.messages.append({"role": "user", "content": prompt})
-            st.rerun()
+            render_chat()
 
-    # Generate and handle assistant reply after user's prompt is appended
-    if st.session_state.get("messages") and st.session_state.messages[-1]["role"] == "user":
-        with st.spinner("Thinking..."):
-            temp_messages = st.session_state.messages.copy()
-            try:
-                response = client.chat.completions.create(
-                    model=st.session_state["interviewer_model"],
-                    messages=temp_messages,
-                )
-                reply = response.choices[0].message.content
-            except Exception as e:
-                reply = "Sorry, there was an issue generating a response."
-                st.error(f"Error: {e}")
-            
+            # 2️⃣ Generate assistant reply
+            with st.spinner("Thinking..."):
+                temp_messages = st.session_state.messages.copy()
+                # Optional: add steering instructions here if needed
+                try:
+                    response = client.chat.completions.create(
+                        model=st.session_state["interviewer_model"],
+                        messages=temp_messages,
+                    )
+                    reply = response.choices[0].message.content
+                except Exception as e:
+                    reply = "Sorry, there was an issue generating a response."
+                    st.error(f"Error: {e}")
+
+            # 3️⃣ Append assistant reply and render
             st.session_state.messages.append({"role": "assistant", "content": reply})
-            
+            render_chat()
+
+            # 4️⃣ Optional speech output
             if speak_flag:
                 with st.spinner("Generating voice..."):
-                    play_sound(reply, st.session_state.interview_voice_id)
-            
-            st.rerun()
+                    audio = voice_client.text_to_speech.convert(
+                        text=reply,
+                        voice_id=st.session_state.interview_voice_id,
+                        model_id="eleven_multilingual_v2"
+                    )
+                    autoplay_html_audio(audio)
 
-    # End interview
-    if st.session_state.get("messages") and not st.session_state.get("interview_ended"):
-        if st.button("🛑 End Interview"):
-            st.session_state.interview_ended = True
-            st.rerun()
+    # ------------------- End interview -------------------
+    if st.button("🛑 End Interview"):
+        st.session_state.interview_ended = True
 
-    if st.session_state.get("interview_ended"):
+    if st.session_state.interview_ended:
+        st.session_state["interview_end_time"] = datetime.now()
+        interview_length = st.session_state["interview_end_time"] - st.session_state["interview_start_time"]
+        total_seconds = interview_length.total_seconds()
+        minutes = int(total_seconds // 60)
+        seconds = int(total_seconds % 60)
+        
         if 'transcript' not in st.session_state:
-            st.session_state["interview_end_time"] = datetime.now()
-            interview_length = st.session_state["interview_end_time"] - st.session_state["interview_start_time"]
-            total_seconds = interview_length.total_seconds()
-            minutes = int(total_seconds // 60)
-            seconds = int(total_seconds % 60)
-            
             transcript_text = generate_transcript(st.session_state.messages, user_name=st.session_state.get("interview_name", "User"))
             st.session_state['transcript'] = transcript_text + f"Interview length: {minutes} minutes, {seconds} seconds"
-            
-            final_message = f"Thank you {st.session_state.get('interview_name', 'User')} for sharing your story. This concludes our interview."
-            st.session_state.messages.append({"role": "assistant", "content": final_message})
-
-        st.success("Interview ended. You can download your transcript below.")
-        st.info("Please wait until analysis has finished before generating a story...")
+            st.session_state.messages = [
+                {"role": "assistant", "content": f"Thank you {st.session_state.get('interview_name', 'User')} for sharing your story. This concludes our interview."}
+            ]
+            st.chat_message("assistant").markdown(st.session_state.messages[-1]["content"])
+            st.success("Interview ended. You can download your transcript below.")
+            st.info("Please wait until analysis has finished before generating a story...")
 
         st.download_button(
             label="📥 Download Transcript",
@@ -383,30 +479,29 @@ with tab1:
                     response = client.chat.completions.create(
                         model=st.session_state.get("analysis_model", default_model),
                         messages=[
-                            {"role": "system", "content": st.session_state.get("analysis_system_prompt", '') + analysis_context},
-                            {"role": "user", "content": st.session_state.get("analysis_init_prompt", '') + "\n-------Transcript-------\n" + st.session_state["transcript"]}
+                            {"role": "system", "content": st.session_state.get("analysis_system_prompt", '') + analysis_context},  
+                            {"role": "user", "content": st.session_state.get("analysis_init_prompt", '') + "\n-------Transcript-------\n"+ st.session_state["transcript"]}
                         ]
                     )
                     st.session_state['analysis'] = response.choices[0].message.content
                     st.success("Analysis Complete! - You can now generate your own story!")
-                    st.rerun()
                 except Exception as e:
-                    st.error(f"Analysis failed: {e}")
+                    st.error("Analysis failed - please re-interview")
 
         if 'analysis' in st.session_state:
             if st.button("📄 View Analysis"):
-                st.session_state['view_analysis'] = not st.session_state.get('view_analysis', False)
-                st.rerun()
+                st.session_state['view_analysis'] = True
 
             if st.session_state.get('view_analysis'):
-                st.text_area("Analysis:", value=st.session_state['analysis'], height=300, disabled=True)
+                with st.spinner("Loading analysis..."):
+                    st.text_area("Analysis:", value=st.session_state['analysis'], height=300)
             
             st.download_button(
-                label="💾 Download Analysis",
-                data=st.session_state['analysis'],
-                file_name=f"{st.session_state.get('interview_name', 'User')}_interview_analysis.txt",
-                mime="text/plain"
-            )
+            label="💾 Download Analysis",
+            data=st.session_state['analysis'],
+            file_name=f"{st.session_state.get('interview_name', 'User')}_interview_analysis.txt",
+            mime="text/plain"
+        )
 with tab2:
     if 'analysis' not in st.session_state:
         st.subheader("⚠️INTERVIEW NOT FOUND!", divider = "red")
