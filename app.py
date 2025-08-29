@@ -12,6 +12,7 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
 from datetime import datetime
 from io import BytesIO
+import base64
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -162,6 +163,16 @@ def read_csv():
             st.error(f"Error reading CSV data: {e}")
             return
 
+def autoplay_html_audio(audio_bytes: bytes, mime_type="audio/mp3"):
+    """Embed an <audio autoplay> element with base64 audio (safe for session_state)."""
+    b64 = base64.b64encode(audio_bytes).decode()
+    html_audio = f"""
+    <audio autoplay="true" style="display:none;">
+        <source src="data:{mime_type};base64,{b64}" type="{mime_type}">
+    </audio>
+    """
+    components.html(html_audio, height=0)
+
 def play_sound(text, key, voice_id):
     try:
         response = voice_client.text_to_speech.convert(
@@ -296,202 +307,177 @@ if "config_initialized" not in st.session_state:
 tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Configuration"])
 
 with tab1:
-    st.title("🗣️ Interviewer")
+    st.title("🗣️Interviewer")
     name = st.text_input("Enter your Name")
-
-    # Chat container placeholder
-    chat_placeholder = st.empty()
-
-    # ------------- Interview Init -------------
-    def init_interview():
-        """Initializes the interview state."""
-        if not st.session_state.get("interview_name"):
-            st.warning("Please enter your name to start the interview.")
-            return False
-
-        st.session_state["interview_start_time"] = datetime.now()
-        # Reset interview-specific state
-        for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended", "last_audio", "story_stages", "safeguarding_flag"]:
-            st.session_state.pop(key, None)
-
-        # Build context
-        interview_context = ""
-        for selected_title in st.session_state.get("interview_selected_files", []):
-            for file_obj in st.session_state.get("titled_prereq_files", []):
-                if file_obj["title"] == selected_title:
-                    interview_context += f"\n\n----------{file_obj['title']}----------\n"
-                    interview_context += file_obj["content"]
-
-        # Prompts
-        interview_prompt_template = st.session_state.get("interview_prompt", "")
-        interview_prompt = interview_prompt_template.format_map(SafeDict(name=st.session_state["interview_name"]))
-        interview_question_template = st.session_state.get("first_question", "")
-        interview_question = interview_question_template.format_map(SafeDict(name=st.session_state["interview_name"]))
-
-        st.session_state.messages = [
-            {"role": "system", "content": interview_prompt + interview_context},
-            {"role": "assistant", "content": interview_question}
-        ]
-        st.session_state["story_stages"] = {}
-        st.session_state["interview_ended"] = False
-        st.session_state["safeguarding_flag"] = False
-        return True
 
     if st.button("🎤 Begin Interview"):
         if not name:
-            st.warning("Please enter your name first.")
+            st.warning("Please enter your name to start the interview.")
         else:
             st.session_state["interview_name"] = name
-            init_interview()
 
-    # ------------- Chat Display -------------
-    def render_chat():
-        if st.session_state.get("messages"):
-            inner = ""
-            for msg in st.session_state.messages[1:]:
-                if msg["role"] == "system":
-                    continue
-                role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
-                content = escape(msg["content"]).replace("\n", "<br>")
-                inner += f"<p><strong>{role}:</strong><br>{content}</p><hr>"
+            # Clear only relevant keys
+            for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended"]:
+                st.session_state.pop(key, None)
 
-            chat_html = f"""
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-            <div id="chat-container" style="
-                height:400px; 
-                overflow-y:auto; 
-                padding:10px; 
-                font-family: 'Inter', sans-serif;
-                font-size: 14px;
-                line-height: 1.5;
-                background-color: #f9f9f9;
-                border-radius: 8px;
-            ">{inner}</div>
-            <script>
-                const el = document.getElementById('chat-container');
-                if (el) {{
-                    el.scrollTo({{ top: el.scrollHeight, behavior: 'smooth' }});
-                }}
-            </script>
-            """
-            chat_placeholder.html(chat_html, height=420, scrolling=False)
+            # Build context
+            interview_context = ""
+            for selected_title in st.session_state["interview_selected_files"]:
+                for file_obj in st.session_state["titled_prereq_files"]:
+                    if file_obj["title"] == selected_title:
+                        interview_context += f"\n\n----------{file_obj['title']}----------\n"
+                        interview_context += file_obj["content"]
 
-    # ------------- Message Processor -------------
-    def process_message(user_input: str):
-        if not user_input:
-            return
+            interview_prompt_template = st.session_state["interview_prompt"]
+            interview_prompt = interview_prompt_template.format_map(SafeDict(name=name))
 
-        # Append user message
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        render_chat()
+            interview_question_template = st.session_state["first_question"]
+            interview_question = interview_question_template.format_map(SafeDict(name=name))
 
-        # Assistant placeholder
-        thinking_placeholder = st.empty()
-        with thinking_placeholder.container():
-            st.markdown("🧑‍💼 Interviewer: *Thinking...*")
+            st.session_state.messages = [
+                {"role": "system", "content": interview_prompt + interview_context},
+                {"role": "assistant", "content": interview_question}
+            ]
 
-        # ---- Background analysis ----
-        all_vars_covered = True
-        steering_instruction = ""
-        with st.spinner("Analyzing..."):
-            new_analysis = analyze_story_stages(
-                st.session_state.messages,
-                st.session_state['steering_model'],
-                st.session_state['steering_prompt']
-            )
-            if new_analysis:
-                st.session_state['story_stages'].update(new_analysis)
-                missing = [s for s, covered in st.session_state['story_stages'].items() if not covered]
-                if missing:
-                    all_vars_covered = False
-                    steering_instruction = f"Missing stages: {', '.join(missing)}."
+    # ------------------- Chat Display -------------------
+    if st.session_state.get("messages"):
+        inner = ""
+        for msg in st.session_state.messages[1:]:
+            if msg["role"] == "system":
+                continue
+            role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
+            content = escape(msg["content"]).replace("\n", "<br>")
+            inner += f"<p><strong>{role}:</strong><br>{content}</p><hr>"
 
-            safeguarding_analysis = analyze_story_stages(
-                st.session_state.messages,
-                st.session_state['safeguarding_model'],
-                st.session_state['safeguarding_prompt']
-            )
-            if safeguarding_analysis:
-                st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
+        chat_html = f"""
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+        <div id="chat-container" style="
+            height:400px; 
+            overflow-y:auto; 
+            padding:10px; 
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        ">
+            {inner}
+        </div>
+        <script>
+            const el = document.getElementById('chat-container');
+            if (el) {{
+                el.scrollTo({{ top: el.scrollHeight, behavior: 'smooth' }});
+            }}
+        </script>
+        """
 
-        if st.session_state['safeguarding_flag'] is True:
-            steering_instruction = "The interviewee has indicated risk of harm. End the interview immediately."
-        elif all_vars_covered:
-            steering_instruction = "All criteria covered. Ask if anything else to add before ending the interview."
-        else:
-            steering_instruction += " Focus your next question on missing stages."
+        components.html(chat_html, height=420, scrolling=False)
 
-        # Generate assistant reply
-        temp_messages = st.session_state.messages.copy()
-        temp_messages.append({"role": "system", "content": steering_instruction})
-        try:
-            response = client.chat.completions.create(
-                model=st.session_state["interviewer_model"],
-                messages=temp_messages,
-            )
-            reply = response.choices[0].message.content
-        except Exception as e:
-            reply = f"⚠️ Error generating response: {e}"
+    # ------------------- Chat Input (Hybrid) -------------------
+    if st.session_state.get("messages"):
+        st.markdown("### Reply")
 
-        thinking_placeholder.empty()
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-        render_chat()
+        col1, col2 = st.columns([2,1])
+        with col1:
+            text_prompt = st.chat_input("Type your reply...")
 
-        # Handle TTS
-        if st.session_state.get("talk_back"):
-            try:
-                voice_id = st.session_state.get("voice_id", "pNInz6obpgDQGcFmaJgB")
-                model_id = st.session_state.get("TTS_model", "eleven_multilingual_v2")
-                audio_stream_iter = voice_client.text_to_speech.stream(
-                    voice_id=voice_id,
-                    text=reply,
-                    model_id=model_id,
-                    output_format="mp3_44100_128",
-                )
-                audio_bytes = BytesIO()
-                for chunk in audio_stream_iter:
-                    audio_bytes.write(chunk)
-                audio_bytes.seek(0)
-                import base64
-                audio_b64 = base64.b64encode(audio_bytes.read()).decode()
-                st.markdown(f"""
-                <audio autoplay>
-                    <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3">
-                </audio>
-                """, unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"TTS playback failed: {e}")
+        with col2:
+            audio_prompt = st.audio_input("🎙️ Speak your reply")
 
-    # ------------- Input Controls (Always visible after Begin Interview) -------------
-    if st.session_state.get("messages") and not st.session_state.get("interview_ended"):
-        st.checkbox("🔊 Interviewer should talk back", key="talk_back", value=True)
-        if prompt := st.chat_input("Type your reply..."):
-            process_message(prompt)
-            st.rerun()
-
-        audio_data = st.audio_input("🎙️ Speak your answer instead", key="audio_input_interview")
-        if audio_data is not None:
-            st.session_state.last_audio = audio_data.read()
-
-        if st.session_state.get("last_audio"):
+        # Determine which input to use
+        prompt = None
+        if text_prompt:
+            prompt = text_prompt
+        elif audio_prompt:
             with st.spinner("Transcribing..."):
+                transcription = voice_client.speech_to_text.convert(
+                    file=audio_prompt,
+                    model_id="eleven_multilingual_v2"
+                )
+                prompt = transcription.text
+
+        if prompt:
+            st.session_state.messages.append({"role": "user", "content": prompt})
+
+            all_vars_covered = True
+            steering_parts = []
+
+            with st.spinner("Thinking..."):
+                new_analysis = analyze_story_stages(
+                    st.session_state.messages,
+                    st.session_state['steering_model'],
+                    st.session_state['steering_prompt']
+                )
+                if new_analysis:
+                    st.session_state['story_stages'].update(new_analysis)
+                    missing = [s for s, covered in st.session_state['story_stages'].items() if not covered]
+                    if missing:
+                        all_vars_covered = False
+                        steering_parts.append(
+                            f"The following stages have not been meaningfully covered: {', '.join(missing)}."
+                        )
+                safeguarding_analysis = analyze_story_stages(
+                    st.session_state.messages,
+                    st.session_state['safeguarding_model'],
+                    st.session_state['safeguarding_prompt']
+                )
+                if safeguarding_analysis:
+                    st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
+
+            # 3. combine steering instructions
+            if st.session_state['safeguarding_flag'] is True:
+                steering_instruction = (
+                    "The interviewee has indicated that either themselves or somebody else is at risk of harm. "
+                    "Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
+                )
+            elif all_vars_covered:
+                steering_instruction = (
+                    "All criteria have been covered. Please thank the interviewee and ask them if there's anything they'd like to add before ending the interview."
+                )
+            else:
+                steering_instruction = (
+                    " ".join(steering_parts) +
+                    " Focus your next question to guide the participant toward one of these missing stages, "
+                    "while still following the interview framework and maintaining empathy and depth."
+                )
+
+            # 4. Send steering instruction to main interviewer
+            temp_messages = st.session_state.messages.copy()
+            if steering_instruction:
+                temp_messages.append({"role": "system", "content": steering_instruction})
+            logging.debug(temp_messages)
+
+            # 5. main interviewer generates the next question
+            with st.spinner("Thinking..."):
                 try:
-                    audio_bytes = BytesIO(st.session_state.last_audio)
-                    transcript = voice_client.speech_to_text.convert(
-                        file=audio_bytes,
-                        model_id="scribe_v1",
-                        diarize=False
-                    ).text
-                    process_message(transcript)
+                    response = client.chat.completions.create(
+                        model=st.session_state["interviewer_model"],
+                        messages=temp_messages,
+                    )
+                    reply = response.choices[0].message.content
                 except Exception as e:
-                    st.error(f"Transcription failed: {e}")
-                finally:
-                    st.session_state.last_audio = None
+                    reply = "Sorry, there was an issue generating a response."
+                    st.error(f"Error: {e}")
+
+            # 6. Append interviewer message
+            st.session_state.messages.append({"role": "assistant", "content": reply})
+
+            # 7. Optional speech output with autoplay
+            if st.checkbox("🔊 Speak replies aloud", key="speak_flag"):
+                with st.spinner("Generating voice..."):
+                    audio = voice_client.text_to_speech.convert(
+                        text=reply,
+                        voice="Rachel",   # or another available ElevenLabs voice
+                        model_id="eleven_multilingual_v2"
+                    )
+                    autoplay_html_audio(audio)  # autoplay in browser
+
+        # End interview button
+        if 'interview_ended' not in st.session_state:
+            st.session_state.interview_ended = False
 
         if st.button("🛑 End Interview"):
             st.session_state.interview_ended = True
-            st.success("Interview ended.")
-
 
         if st.session_state.interview_ended:
             st.session_state["interview_end_time"] = datetime.now()
