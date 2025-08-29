@@ -49,7 +49,7 @@ voices_response = voice_client.voices.search()
 voice_options = {voice.name: voice.voice_id for voice in voices_response.voices}
 
 for voice in voices_response.voices:
-    print(f"Name: {voice.name}, ID: {voice.voice_id}")
+    st.write(f"Name: {voice.name}, ID: {voice.voice_id}")
 
 if not voice_options:
     st.error("No voices found in your account. Add a voice in ElevenLabs first.")
