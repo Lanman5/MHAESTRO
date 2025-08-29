@@ -11,6 +11,7 @@ from html import escape
 from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
 from datetime import datetime
+import base64
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -46,6 +47,9 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 voice_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 voices_response = voice_client.voices.search()
 voice_options = {voice.name: voice.voice_id for voice in voices_response.voices}
+
+for voice in voices_response.voices:
+    print(f"Name: {voice.name}, ID: {voice.voice_id}")
 
 if not voice_options:
     st.error("No voices found in your account. Add a voice in ElevenLabs first.")
@@ -337,6 +341,13 @@ with tab1:
         # Render chat + auto-scroll
         components.html(chat_html, height=420, scrolling=False)
 
+    # ------------------- Auto-read Checkbox -------------------
+    st.session_state.setdefault("auto_read", False)
+    st.session_state["auto_read"] = st.checkbox(
+        "🔊 Auto-read interviewer responses",
+        value=st.session_state["auto_read"]
+    )
+
     # ------------------- Chat Input -------------------
     if st.session_state.get("messages"):
         if prompt := st.chat_input("Type your reply..."):
@@ -346,32 +357,52 @@ with tab1:
             steering_parts = []
 
             with st.spinner("Thinking..."):
-                new_analysis = analyze_story_stages(st.session_state.messages, st.session_state['steering_model'],st.session_state['steering_prompt'])
+                new_analysis = analyze_story_stages(
+                    st.session_state.messages,
+                    st.session_state['steering_model'],
+                    st.session_state['steering_prompt']
+                )
                 if new_analysis:
                     st.session_state['story_stages'].update(new_analysis)
                     missing = [s for s, covered in st.session_state['story_stages'].items() if not covered]
                     if missing:
                         all_vars_covered = False
-                        steering_parts.append(f"The following stages have not been meaningfully covered: {', '.join(missing)}.")
-                safeguarding_analysis = analyze_story_stages(st.session_state.messages, st.session_state['safeguarding_model'], st.session_state['safeguarding_prompt'])
+                        steering_parts.append(
+                            f"The following stages have not been meaningfully covered: {', '.join(missing)}."
+                        )
+
+                safeguarding_analysis = analyze_story_stages(
+                    st.session_state.messages,
+                    st.session_state['safeguarding_model'],
+                    st.session_state['safeguarding_prompt']
+                )
                 if safeguarding_analysis:
                     st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
 
-
-            # 3. combine all steering instructions
+            # 3. Combine all steering instructions
             if st.session_state['safeguarding_flag'] is True:
-                steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
+                steering_instruction = (
+                    "The interviewee has indicated that either themselves or somebody else is at risk of harm. "
+                    "Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
+                )
             elif all_vars_covered:
-                steering_instruction = "All criteria have been covered. Please thank the interviewee and ask them if there's anything they'd like to add before ending the interview."
+                steering_instruction = (
+                    "All criteria have been covered. Please thank the interviewee and ask them if there's anything "
+                    "they'd like to add before ending the interview."
+                )
             else:
-                steering_instruction = (" ".join(steering_parts) + " Focus your next question to guide the participant toward one of these missing stages, while still following the interview framework and maintaining empathy and depth.")
+                steering_instruction = (
+                    " ".join(steering_parts) +
+                    " Focus your next question to guide the participant toward one of these missing stages, "
+                    "while still following the interview framework and maintaining empathy and depth."
+                )
+
             # 4. Send steering instruction to main interviewer
             temp_messages = st.session_state.messages.copy()
-            if steering_instruction:  # Only add if we have bots
+            if steering_instruction:
                 temp_messages.append({"role": "system", "content": steering_instruction})
-            logging.debug(temp_messages)
 
-            # 5. main interviewer generates the next question
+            # 5. Main interviewer generates the next question
             with st.spinner("Thinking..."):
                 try:
                     response = client.chat.completions.create(
@@ -386,7 +417,27 @@ with tab1:
             # 6. Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
-            # 7. Refresh UI
+            # 🔊 7. Auto-read interviewer response if enabled
+            if st.session_state["auto_read"]:
+                audio_key = f"interviewer_{len(st.session_state.messages)}"
+                play_sound(
+                    text=reply,
+                    key=audio_key,
+                    voice_id="YOUR_DEFAULT_VOICE_ID"  # Replace with your ElevenLabs voice ID
+                )
+
+                audio_bytes = st.session_state[f"{audio_key}_audio"]
+
+                # Convert to base64 + autoplay once
+                audio_base64 = base64.b64encode(audio_bytes).decode()
+                audio_html = f"""
+                    <audio autoplay hidden>
+                        <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
+                    </audio>
+                """
+                st.markdown(audio_html, unsafe_allow_html=True)
+
+            # 8. Refresh UI
             st.rerun()
 
         if 'interview_ended' not in st.session_state:
