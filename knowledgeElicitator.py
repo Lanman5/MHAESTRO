@@ -278,8 +278,12 @@ with tab1:
     if st.session_state.get("messages"):
         #progres bar
         if st.session_state.get("interview_in_progress") and not st.session_state.get("interview_ended"):
-            current_depth = len(st.session_state.stage_path)
-            progress_percentage = current_depth / st.session_state.max_depth
+            # Number of steps completed (exclude root)
+            current_depth = len(st.session_state.stage_path) - 1
+            # Avoid division by zero
+            max_depth = max(1, st.session_state.max_depth - 1)
+            progress_percentage = current_depth / max_depth  
+
             st.markdown("##### __***Interview Progress:***__")
             st.progress(progress_percentage)
         inner = ""
