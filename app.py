@@ -11,7 +11,6 @@ from html import escape
 from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
 from datetime import datetime
-import base64
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -256,8 +255,7 @@ if "config_initialized" not in st.session_state:
         "config_initialized": True,
 
         #tts config
-        "TTS_model": "eleven_multilingual_v2", #set a default
-        "interview_voiceid": "kBag1HOZlaVBH7ICPE8x"
+        "TTS_model": "eleven_multilingual_v2" #set a default
 
     })
 
@@ -295,14 +293,6 @@ with tab1:
             {"role": "system", "content": interview_prompt + interview_context},
             {"role": "assistant", "content": interview_question}
         ]
-
-            # Schedule first message audio if auto_read enabled
-            if st.session_state.get("auto_read"):
-                st.session_state["play_audio_next"] = {
-                    "text": interview_question,
-                    "key": "interviewer",
-                    "voice_id": st.session_state["interview_voiceid"]
-                }
 
 # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
@@ -347,12 +337,6 @@ with tab1:
         # Render chat + auto-scroll
         components.html(chat_html, height=420, scrolling=False)
 
-    # ------------------- Auto-read Checkbox -------------------
-    st.session_state.setdefault("auto_read", False)
-    st.session_state["auto_read"] = st.checkbox(
-        "🔊 Auto-read interviewer responses",
-        value=st.session_state["auto_read"]
-    )
     # ------------------- Chat Input -------------------
     if st.session_state.get("messages"):
         if prompt := st.chat_input("Type your reply..."):
@@ -362,52 +346,32 @@ with tab1:
             steering_parts = []
 
             with st.spinner("Thinking..."):
-                new_analysis = analyze_story_stages(
-                    st.session_state.messages,
-                    st.session_state['steering_model'],
-                    st.session_state['steering_prompt']
-                )
+                new_analysis = analyze_story_stages(st.session_state.messages, st.session_state['steering_model'],st.session_state['steering_prompt'])
                 if new_analysis:
                     st.session_state['story_stages'].update(new_analysis)
                     missing = [s for s, covered in st.session_state['story_stages'].items() if not covered]
                     if missing:
                         all_vars_covered = False
-                        steering_parts.append(
-                            f"The following stages have not been meaningfully covered: {', '.join(missing)}."
-                        )
-
-                safeguarding_analysis = analyze_story_stages(
-                    st.session_state.messages,
-                    st.session_state['safeguarding_model'],
-                    st.session_state['safeguarding_prompt']
-                )
+                        steering_parts.append(f"The following stages have not been meaningfully covered: {', '.join(missing)}.")
+                safeguarding_analysis = analyze_story_stages(st.session_state.messages, st.session_state['safeguarding_model'], st.session_state['safeguarding_prompt'])
                 if safeguarding_analysis:
                     st.session_state['safeguarding_flag'] = safeguarding_analysis.get('safeguarding_flag')
 
-            # 3. Combine all steering instructions
-            if st.session_state['safeguarding_flag'] is True:
-                steering_instruction = (
-                    "The interviewee has indicated that either themselves or somebody else is at risk of harm. "
-                    "Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
-                )
-            elif all_vars_covered:
-                steering_instruction = (
-                    "All criteria have been covered. Please thank the interviewee and ask them if there's anything "
-                    "they'd like to add before ending the interview."
-                )
-            else:
-                steering_instruction = (
-                    " ".join(steering_parts) +
-                    " Focus your next question to guide the participant toward one of these missing stages, "
-                    "while still following the interview framework and maintaining empathy and depth."
-                )
 
+            # 3. combine all steering instructions
+            if st.session_state['safeguarding_flag'] is True:
+                steering_instruction = "The interviewee has indicated that either themselves or somebody else is at risk of harm. Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
+            elif all_vars_covered:
+                steering_instruction = "All criteria have been covered. Please thank the interviewee and ask them if there's anything they'd like to add before ending the interview."
+            else:
+                steering_instruction = (" ".join(steering_parts) + " Focus your next question to guide the participant toward one of these missing stages, while still following the interview framework and maintaining empathy and depth.")
             # 4. Send steering instruction to main interviewer
             temp_messages = st.session_state.messages.copy()
-            if steering_instruction:
+            if steering_instruction:  # Only add if we have bots
                 temp_messages.append({"role": "system", "content": steering_instruction})
+            logging.debug(temp_messages)
 
-            # 5. Main interviewer generates the next question
+            # 5. main interviewer generates the next question
             with st.spinner("Thinking..."):
                 try:
                     response = client.chat.completions.create(
@@ -422,23 +386,8 @@ with tab1:
             # 6. Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
-        # --- Auto-play TTS if enabled ---
-            if st.session_state.auto_read:
-                play_sound(reply, key="last_reply", voice_id=list(voice_options.values())[0])
-                if "last_reply_audio" in st.session_state:
-                    audio_bytes = st.session_state["last_reply_audio"]
-
-                    audio_html = f"""
-                    <audio autoplay>
-                        <source src="data:audio/mp3;base64,{base64.b64encode(audio_bytes).decode()}" type="audio/mp3">
-                    </audio>
-                    """
-                    st.markdown(audio_html, unsafe_allow_html=True)
-            # 8. Refresh UI
+            # 7. Refresh UI
             st.rerun()
-
-        if 'interview_ended' not in st.session_state:
-            st.session_state.interview_ended = False
 
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
@@ -508,7 +457,7 @@ with tab1:
 with tab2:
     if 'analysis' not in st.session_state:
         st.subheader("⚠️INTERVIEW NOT FOUND!", divider = "red")
-        st.markdown("#### *Please complete an interview in the preivous tab so it can be analysed for storytelling or upload your own transcript below!*")
+        st.markdown("#### *Please complete an interview in the previous tab so it can be analysed for storytelling or upload your own transcript below!*")
 
         user_transcript = st.file_uploader(
         "Upload your own transcript:", 
@@ -722,14 +671,11 @@ with tab3:
         st.session_state.pop("user_uploaded_prereq_files", None)
 
 
-    st.markdown("### Text-to-Speech Settings:")
-    selected_voice_name = st.selectbox("Select Voice:", list(voice_options.keys()))
-    st.session_state.interview_voice_id = voice_options[selected_voice_name]
-
+    st.markdown("### Select Text-to-Speech model")
     model_list = get_elevenlabs_model_list()
     if model_list:
         selected_model_id = st.selectbox(
-            "Select TTS Model:",
+            "Select Model:",
             model_list,
             key="TTS_model"
         )
