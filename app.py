@@ -207,25 +207,15 @@ def transcribe_with_elevenlabs_sdk(audio_bytes: bytes, timeout: int = 600) -> st
         return ""
     
 def autoplay_audio(audio_bytes: bytes):
-    """Play audio automatically using an HTML5 <audio> tag with autoplay and stop any previous audio."""
-    import base64
+    """Play audio automatically without affecting layout."""
     b64 = base64.b64encode(audio_bytes).decode()
     html_code = f"""
-    <div style="height:0px; overflow:hidden; margin:0; padding:0;">
-        <script>
-            // Stop previous audio if it exists
-            if (window.currentAudio) {{
-                window.currentAudio.pause();
-                window.currentAudio.currentTime = 0;
-            }}
-            const audio = new Audio("data:audio/mp3;base64,{b64}");
-            audio.autoplay = true;
-            window.currentAudio = audio;
-        </script>
-    </div>
+    <audio autoplay style="display:none;">
+        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+    </audio>
     """
-    components.html(html_code, height=0)
-
+    st.markdown(html_code, unsafe_allow_html=True)
+    
 def clear_audio_keys():
     """Remove all stored audio blobs from session_state."""
     audio_keys = [k for k in st.session_state.keys() if k.endswith("_audio")]
