@@ -163,27 +163,29 @@ def read_csv():
             return
 
 def play_sound(text, key, voice_id):
-    try:
-        response = voice_client.text_to_speech.convert(
-            text=text,
-            voice_id=voice_id,
-            model_id=st.session_state["TTS_model"],
-            output_format="mp3_44100_128",
-            voice_settings=VoiceSettings(
-                stability=0.5,
-                similarity_boost=0.75,
-                style=0.1,
-                use_speaker_boost=True
+    with st.spinner("Generating audio..."):
+        try:
+            response = voice_client.text_to_speech.convert(
+                text=text,
+                voice_id=voice_id,
+                model_id=st.session_state["TTS_model"],
+                output_format="mp3_44100_128",
+                voice_settings=VoiceSettings(
+                    stability=0.5,
+                    similarity_boost=0.75,
+                    style=0.1,
+                    speed=1.25,
+                    use_speaker_boost=True
+                )
             )
-        )
 
-        # Combine chunks into bytes
-        audio_bytes = b"".join(response)
-        
-        st.session_state[f"{key}_audio"] = audio_bytes
+            # Combine chunks into bytes
+            audio_bytes = b"".join(response)
+            
+            st.session_state[f"{key}_audio"] = audio_bytes
 
-    except Exception as e:
-        st.error(f"Error occurred while playing sound: {e}")
+        except Exception as e:
+            st.error(f"Error occurred while playing sound: {e}")
 
 def transcribe_with_elevenlabs_sdk(audio_bytes: bytes, timeout: int = 600) -> str:
     """
@@ -204,14 +206,24 @@ def transcribe_with_elevenlabs_sdk(audio_bytes: bytes, timeout: int = 600) -> st
         return ""
     
 def autoplay_audio(audio_bytes: bytes):
-    """Play audio automatically using an HTML5 <audio> tag with autoplay."""
+    """Play audio automatically using an HTML5 <audio> tag with autoplay and stop any previous audio."""
+    import base64
     b64 = base64.b64encode(audio_bytes).decode()
-    md = f"""
-    <audio autoplay="true">
-        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-    </audio>
+    html_code = f"""
+    <script>
+        // Stop previous audio if it exists
+        if (window.currentAudio) {{
+            window.currentAudio.pause();
+            window.currentAudio.currentTime = 0;
+        }}
+        // Create new audio element and autoplay
+        const audio = new Audio("data:audio/mp3;base64,{b64}");
+        audio.autoplay = true;
+        window.currentAudio = audio;
+    </script>
     """
-    components.html(md, height=0)
+    components.html(html_code, height=0)
+
 
 def clear_audio_keys():
     """Remove all stored audio blobs from session_state."""
@@ -331,11 +343,6 @@ tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Confi
 with tab1:
     st.title("🗣️Interviewer")
     auto_speak = st.checkbox("🔊 Automatically speak interviewer responses", value=True)
-    if auto_speak and "last_reply_to_speak" in st.session_state:
-        reply_text = st.session_state.pop("last_reply_to_speak")
-        play_sound(reply_text, "last_reply", st.session_state.interviewer_voiceid)
-        autoplay_audio(st.session_state["last_reply_audio"])
-    
     name = st.text_input("Enter your Name")
     if st.button("🎤 Begin Interview"):
         if not name:
@@ -369,8 +376,8 @@ with tab1:
             
             # 🎤 Auto-speak the first question if enabled
             if auto_speak:
-                play_sound(interview_question, "first_question", st.session_state.interviewer_voiceid)
-                autoplay_audio(st.session_state["first_question_audio"])
+                st.session_state["last_reply_to_speak"] = interview_question
+
     # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
         if "story_stages" in st.session_state:
@@ -412,6 +419,17 @@ with tab1:
         </script>
         """
         components.html(chat_html, height=420, scrolling=False)
+
+        # ------------------- Autoplay pending interviewer reply -------------------
+        if auto_speak and "last_reply_to_speak" in st.session_state:
+            reply_text = st.session_state.pop("last_reply_to_speak")
+
+            # Generate audio
+            play_sound(reply_text, "last_reply", list(voice_options.values())[0])
+
+            # Only autoplay if audio was successfully created
+            if "last_reply_audio" in st.session_state:
+                autoplay_audio(st.session_state["last_reply_audio"])
 
     # ------------------- Chat Input -------------------
     if st.session_state.get("messages"):
