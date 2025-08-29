@@ -215,7 +215,7 @@ def autoplay_audio(audio_bytes: bytes):
     </audio>
     """
     st.markdown(html_code, unsafe_allow_html=True)
-    
+
 def clear_audio_keys():
     """Remove all stored audio blobs from session_state."""
     audio_keys = [k for k in st.session_state.keys() if k.endswith("_audio")]
@@ -238,6 +238,15 @@ def hybrid_chat_input(label="Reply to interviewer..."):
     with col2:
         audio = st.audio_input("🎙️ Speak", label_visibility="collapsed")
         if audio:
+            # Stop any currently playing interviewer audio
+            st.markdown("""
+            <script>
+                if (window.currentAudio) {
+                    window.currentAudio.pause();
+                    window.currentAudio.currentTime = 0;
+                }
+            </script>
+            """, unsafe_allow_html=True)
             audio_bytes = audio.read()
             # compute hash to uniquely identify this audio blob
             fingerprint = hashlib.sha256(audio_bytes).hexdigest()
