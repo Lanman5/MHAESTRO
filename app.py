@@ -305,7 +305,8 @@ if "config_initialized" not in st.session_state:
         "config_initialized": True,
 
         #tts config
-        "TTS_model": "eleven_multilingual_v2" #set a default
+        "TTS_model": "eleven_multilingual_v2",#set a default
+        "interviewer_voiceid":  list(voice_options.values())[0]
 
     })
 
@@ -313,6 +314,7 @@ tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Confi
 
 with tab1:
     st.title("🗣️Interviewer")
+    auto_speak = st.checkbox("🔊 Automatically speak interviewer responses")
     name = st.text_input("Enter your Name")
     if st.button("🎤 Begin Interview"):
         if not name:
@@ -342,7 +344,11 @@ with tab1:
                 {"role": "system", "content": interview_prompt + interview_context},
                 {"role": "assistant", "content": interview_question}
             ]
-
+            
+            # 🎤 Auto-speak the first question if enabled
+            if auto_speak:
+                play_sound(interview_question, "first_question", st.session_state.interviewer_voiceid)
+                st.audio(st.session_state["first_question_audio"], format="audio/mp3")
     # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
         if "story_stages" in st.session_state:
@@ -455,7 +461,12 @@ with tab1:
             # 6. Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
-            # 7. Refresh UI
+            # 7. Auto-speak interviewer replies if enabled
+            if auto_speak:
+                play_sound(reply, f"reply_{len(st.session_state.messages)}", st.session_state.interviewer_voiceid)
+                st.audio(st.session_state[f"reply_{len(st.session_state.messages)}_audio"], format="audio/mp3")
+
+            # 8. Refresh UI
             st.rerun()
 
         if 'interview_ended' not in st.session_state:
@@ -645,9 +656,7 @@ with tab2:
                             st.success("Story Created! - Enjoy!")
                             st.session_state['generate_child_story'] = False
                         except Exception as e:
-                            st.error("Story Generation Failed - Please try again...")
-
-                    
+                            st.error("Story Generation Failed - Please try again...")     
 
                 if st.session_state.get('generate_eyfs_story'):
                     with st.spinner("Writing your story..."):
@@ -740,11 +749,14 @@ with tab3:
         st.session_state.pop("user_uploaded_prereq_files", None)
 
 
-    st.markdown("### Select Text-to-Speech model")
+    st.markdown("### Text-to-Speech Settings")
+    if voice_options:
+        selected_voice_name = st.selectbox("Select Interviewer Voice:", list(voice_options.keys()))
+        st.session_state.interviewer_voiceid = voice_options[selected_voice_name]
     model_list = get_elevenlabs_model_list()
     if model_list:
         selected_model_id = st.selectbox(
-            "Select Model:",
+            "Select TTS Model:",
             model_list,
             key="TTS_model"
         )
