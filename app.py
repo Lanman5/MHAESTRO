@@ -165,16 +165,17 @@ def read_csv():
 def play_sound(text, key, voice_id):
     with st.spinner("Generating audio..."):
         try:
+            tts_model = st.session_state.get("TTS_model", "eleven_multilingual_v2")
             response = voice_client.text_to_speech.convert(
                 text=text,
                 voice_id=voice_id,
-                model_id=st.session_state["TTS_model"],
+                model_id=tts_model,
                 output_format="mp3_44100_128",
                 voice_settings=VoiceSettings(
                     stability=0.5,
                     similarity_boost=0.75,
                     style=0.1,
-                    speed=1.1,
+                    speed=1.2,
                     use_speaker_boost=True
                 )
             )
