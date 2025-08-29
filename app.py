@@ -163,8 +163,13 @@ def read_csv():
             st.error(f"Error reading CSV data: {e}")
             return
 
-def autoplay_html_audio(audio_bytes: bytes, mime_type="audio/mp3"):
+def autoplay_html_audio(audio_obj, mime_type="audio/mp3"):
     """Embed an <audio autoplay> element with base64 audio (safe for session_state)."""
+    # If it's a file-like object, read its bytes
+    if hasattr(audio_obj, "read"):
+        audio_bytes = audio_obj.read()
+    else:
+        audio_bytes = audio_obj  # assume raw bytes
     b64 = base64.b64encode(audio_bytes).decode()
     html_audio = f"""
     <audio autoplay="true" style="display:none;">
@@ -172,6 +177,7 @@ def autoplay_html_audio(audio_bytes: bytes, mime_type="audio/mp3"):
     </audio>
     """
     components.html(html_audio, height=0)
+
 
 # ---------------- Chat render function ----------------
 def render_chat():
