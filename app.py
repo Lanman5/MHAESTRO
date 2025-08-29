@@ -237,6 +237,20 @@ def hybrid_chat_input(label="Reply to interviewer..."):
 
     with col2:
         audio = st.audio_input("🎙️ Speak", label_visibility="collapsed")
+        # Inject JS to stop audio immediately on microphone start
+        st.markdown("""
+        <script>
+            const micInput = document.querySelector('input[type=file]');
+            if (micInput) {
+                micInput.addEventListener('change', function() {
+                    if(window.currentAudio) {
+                        window.currentAudio.pause();
+                        window.currentAudio.currentTime = 0;
+                    }
+                });
+            }
+        </script>
+        """, unsafe_allow_html=True)
         if audio:
             # Stop any currently playing interviewer audio
             st.markdown("""
