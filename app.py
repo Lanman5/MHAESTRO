@@ -296,6 +296,14 @@ with tab1:
             {"role": "assistant", "content": interview_question}
         ]
 
+            # Schedule first message audio if auto_read enabled
+            if st.session_state.get("auto_read"):
+                st.session_state["play_audio_next"] = {
+                    "text": interview_question,
+                    "key": "interviewer",
+                    "voice_id": st.session_state["interview_voiceid"]
+                }
+
 # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
         if "story_stages" in st.session_state:
@@ -414,24 +422,36 @@ with tab1:
             # 6. Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
-            #7. Play audio if checked 
+            # 7. Schedule audio playback (not immediate)
             if st.session_state.get("auto_read"):
-                play_sound(
-                    text=reply,
-                    key="interviewer",
-                    voice_id=st.session_state["interview_voiceid"]
-                )
-                if "interviewer_audio" in st.session_state:
-                    audio_bytes = st.session_state["interviewer_audio"]
-                    b64 = base64.b64encode(audio_bytes).decode()
-                    audio_html = f"""
-                        <audio autoplay style="display:none;">
-                            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-                        </audio>
-                    """
-                    st.markdown(audio_html, unsafe_allow_html=True)
+                st.session_state["play_audio_next"] = {
+                    "text": reply,
+                    "key": "interviewer",
+                    "voice_id": st.session_state["interview_voiceid"]
+                }
+
             # 8. Refresh UI
             st.rerun()
+            
+            # ------------------- Deferred Audio Playback -------------------
+        if "play_audio_next" in st.session_state:
+            data = st.session_state.pop("play_audio_next")
+            play_sound(
+                text=data["text"],
+                key=data["key"],
+                voice_id=data["voice_id"]
+            )
+            if "interviewer_audio" in st.session_state:
+                audio_bytes = st.session_state["interviewer_audio"]
+                b64 = base64.b64encode(audio_bytes).decode()
+                audio_html = f"""
+                    <audio autoplay style="display:none;">
+                        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+                    </audio>
+                """
+                st.markdown(audio_html, unsafe_allow_html=True)
+        if 'interview_ended' not in st.session_state:
+            st.session_state.interview_ended = False
 
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
