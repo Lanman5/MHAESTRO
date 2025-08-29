@@ -174,7 +174,7 @@ def play_sound(text, key, voice_id):
                     stability=0.5,
                     similarity_boost=0.75,
                     style=0.1,
-                    speed=1.25,
+                    speed=1.1,
                     use_speaker_boost=True
                 )
             )
