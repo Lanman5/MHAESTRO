@@ -278,14 +278,17 @@ with tab1:
     if st.session_state.get("messages"):
         #progres bar
         if st.session_state.get("interview_in_progress") and not st.session_state.get("interview_ended"):
-            # Number of steps completed (exclude root)
-            current_depth = len(st.session_state.stage_path) - 1
-            # Avoid division by zero
+            # Count all nodes visited so far (including current question, exclude root)
+            current_depth = max(0, len(st.session_state.stage_path) - 1)
+            # Total number of questions = max depth excluding root
             max_depth = max(1, st.session_state.max_depth - 1)
-            progress_percentage = current_depth / max_depth  
 
-            st.markdown("##### __***Interview Progress:***__")
+            # Progress should move as soon as first question is asked
+            progress_percentage = min(1.0, current_depth / max_depth)
+
+            st.markdown(f"##### __***Interview Progress: {int(progress_percentage * 100)}%***__")
             st.progress(progress_percentage)
+
         inner = ""
         for msg in st.session_state.messages[1:]:
             if msg["role"] == "system":
