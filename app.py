@@ -345,7 +345,6 @@ with tab1:
         "🔊 Auto-read interviewer responses",
         value=st.session_state["auto_read"]
     )
-
     # ------------------- Chat Input -------------------
     if st.session_state.get("messages"):
         if prompt := st.chat_input("Type your reply..."):
@@ -415,35 +414,22 @@ with tab1:
             # 6. Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
-            # 🔊 7. Auto-read interviewer response if enabled
-            if st.session_state["auto_read"]:
-                # Unique key for this interviewer message
-                msg_index = len(st.session_state.messages) - 1
-                audio_key = f"interviewer_{msg_index}"
-
-                # Only play if not already played
-                if f"{audio_key}_played" not in st.session_state:
-                    play_sound(
-                        text=reply,
-                        key=audio_key,
-                        voice_id=st.session_state.interview_voiceid
-                    )
-
-                    audio_bytes = st.session_state[f"{audio_key}_audio"]
-
-                    if audio_bytes:
-                        # Convert to base64 + autoplay once
-                        audio_base64 = base64.b64encode(audio_bytes).decode()
-                        audio_html = f"""
-                            <audio id="{audio_key}" autoplay>
-                                <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
-                            </audio>
-                        """
-                        st.markdown(audio_html, unsafe_allow_html=True)
-
-                    # Mark this message as already played
-                    st.session_state[f"{audio_key}_played"] = True
-
+            #7. Play audio if checked 
+            if st.session_state.get("auto_read"):
+                play_sound(
+                    text=reply,
+                    key="interviewer",
+                    voice_id=st.session_state["interview_voiceid"]
+                )
+                if "interviewer_audio" in st.session_state:
+                    audio_bytes = st.session_state["interviewer_audio"]
+                    b64 = base64.b64encode(audio_bytes).decode()
+                    audio_html = f"""
+                        <audio autoplay style="display:none;">
+                            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+                        </audio>
+                    """
+                    st.markdown(audio_html, unsafe_allow_html=True)
             # 8. Refresh UI
             st.rerun()
 
@@ -451,10 +437,6 @@ with tab1:
             st.session_state.interview_ended = False
 
         if st.button("🛑 End Interview"):
-            # Clear session state of all voice recordings
-            for k in list(st.session_state.keys()):
-                if k.endswith("_audio") or k.endswith("_played"):
-                    st.session_state.pop(k)
             st.session_state.interview_ended = True
 
         if st.session_state.interview_ended:
