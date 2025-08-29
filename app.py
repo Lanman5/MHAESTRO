@@ -207,14 +207,20 @@ def transcribe_with_elevenlabs_sdk(audio_bytes: bytes, timeout: int = 600) -> st
         return ""
     
 def autoplay_audio(audio_bytes: bytes):
-    """Play audio automatically without affecting layout."""
+    import base64
     b64 = base64.b64encode(audio_bytes).decode()
     html_code = f"""
     <audio autoplay style="display:none;">
         <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
     </audio>
+    <script>
+        window.currentAudio?.pause();
+        window.currentAudio?.currentTime = 0;
+        window.currentAudio = document.currentElementsByTagName('audio')[document.getElementsByTagName('audio').length-1];
+    </script>
     """
     st.markdown(html_code, unsafe_allow_html=True)
+
 
 def clear_audio_keys():
     """Remove all stored audio blobs from session_state."""
@@ -237,22 +243,7 @@ def hybrid_chat_input(label="Reply to interviewer..."):
 
     with col2:
         audio = st.audio_input("🎙️ Speak", label_visibility="collapsed")
-        # Inject JS to stop audio immediately on microphone start
-        st.markdown("""
-        <script>
-            const micInput = document.querySelector('input[type=file]');
-            if (micInput) {
-                micInput.addEventListener('change', function() {
-                    if(window.currentAudio) {
-                        window.currentAudio.pause();
-                        window.currentAudio.currentTime = 0;
-                    }
-                });
-            }
-        </script>
-        """, unsafe_allow_html=True)
-        if audio:
-            # Stop any currently playing interviewer audio
+        if st.button("🙊 Mute"):
             st.markdown("""
             <script>
                 if (window.currentAudio) {
@@ -261,6 +252,7 @@ def hybrid_chat_input(label="Reply to interviewer..."):
                 }
             </script>
             """, unsafe_allow_html=True)
+        if audio:
             audio_bytes = audio.read()
             # compute hash to uniquely identify this audio blob
             fingerprint = hashlib.sha256(audio_bytes).hexdigest()
@@ -356,8 +348,8 @@ tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Confi
 
 with tab1:
     st.title("🗣️Interviewer")
-    auto_speak = st.checkbox("🔊 Automatically speak interviewer responses", value=True)
     name = st.text_input("Enter your Name")
+    auto_speak = st.checkbox("🔊 Automatically speak interviewer responses", value=True, key="auto_speak")
     if st.button("🎤 Begin Interview"):
         if not name:
             st.warning("Please enter your name to start the interview.")
@@ -434,7 +426,7 @@ with tab1:
         """
         components.html(chat_html, height=420, scrolling=False)
 
-        # ------------------- Autoplay pending interviewer reply -------------------
+        # ------------------- Autoplay pending interviewer reply ------------------
         if auto_speak and "last_reply_to_speak" in st.session_state:
             reply_text = st.session_state.pop("last_reply_to_speak")
 
