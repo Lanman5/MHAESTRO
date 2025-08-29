@@ -422,41 +422,21 @@ with tab1:
             # 6. Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
-            # 7. Schedule audio playback (not immediate)
-            if st.session_state.get("auto_read"):
-                st.session_state["play_audio_next"] = {
-                    "text": reply,
-                    "key": "interviewer",
-                    "voice_id": st.session_state["interview_voiceid"]
-                }
+        # --- Auto-play TTS if enabled ---
+            if st.session_state.auto_read:
+                play_sound(reply, key="last_reply", voice_id=list(voice_options.values())[0])
+                if "last_reply_audio" in st.session_state:
+                    audio_bytes = st.session_state["last_reply_audio"]
 
-            # 8. Refresh UI
-            st.rerun()
-        # ------------------- Deferred Audio Playback -------------------
-        if "play_audio_next" in st.session_state:
-            data = st.session_state["play_audio_next"]  # don't pop immediately
-
-            try:
-                play_sound(
-                    text=data["text"],
-                    key=data["key"],
-                    voice_id=data["voice_id"]
-                )
-                if "interviewer_audio" in st.session_state:
-                    audio_bytes = st.session_state["interviewer_audio"]
-                    b64 = base64.b64encode(audio_bytes).decode()
                     audio_html = f"""
-                        <audio autoplay style="display:none;">
-                            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-                        </audio>
+                    <audio autoplay>
+                        <source src="data:audio/mp3;base64,{base64.b64encode(audio_bytes).decode()}" type="audio/mp3">
+                    </audio>
                     """
                     st.markdown(audio_html, unsafe_allow_html=True)
+            # 8. Refresh UI
+            st.rerun()
 
-                # ✅ Only clear after successful playback
-                st.session_state.pop("play_audio_next", None)
-
-            except Exception as e:
-                st.error(f"Error occurred while playing sound: {e}")
         if 'interview_ended' not in st.session_state:
             st.session_state.interview_ended = False
 
