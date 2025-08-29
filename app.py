@@ -312,8 +312,13 @@ with tab1:
     st.title("🗣️Interviewer")
     name = st.text_input("Enter your Name")
 
-    # Always show speak checkbox once interview has started
-    speak_flag = st.checkbox("🔊 Speak replies aloud", key="speak_flag")
+    if voice_options:
+        selected_voice_name = st.selectbox("Select Voice:", list(voice_options.keys()))
+        st.session_state.interview_voice_id = voice_options[selected_voice_name]
+        # Always show speak checkbox once interview has started
+        speak_flag = st.checkbox("🔊 Speak replies aloud", key="speak_flag")
+    else:
+        st.info("No voices found in your ElevenLabs account. Please add a voice in ElevenLabs to enable text-to-speech features.")
 
     if st.button("🎤 Begin Interview"):
         if not name:
@@ -353,7 +358,7 @@ with tab1:
                 with st.spinner("Generating voice..."):
                     audio = voice_client.text_to_speech.convert(
                         text=interview_question,
-                        voice="Rachel",
+                        voice=st.session_state.interview_voice_id,
                         model_id="eleven_multilingual_v2"
                     )
                     autoplay_html_audio(audio)
