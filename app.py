@@ -164,12 +164,20 @@ def read_csv():
             return
 
 def autoplay_html_audio(audio_obj, mime_type="audio/mp3"):
-    """Embed an <audio autoplay> element with base64 audio (safe for session_state)."""
-    # If it's a file-like object, read its bytes
+    """
+    Embed <audio autoplay> with base64 audio.
+    Works for raw bytes, BytesIO, or StreamingResponse from ElevenLabs SDK.
+    """
+    # If it has .read() (file-like), read bytes
     if hasattr(audio_obj, "read"):
         audio_bytes = audio_obj.read()
+    # If it has .content (HTTP response), use that
+    elif hasattr(audio_obj, "content"):
+        audio_bytes = audio_obj.content
+    # Otherwise, assume it’s raw bytes
     else:
-        audio_bytes = audio_obj  # assume raw bytes
+        audio_bytes = audio_obj
+
     b64 = base64.b64encode(audio_bytes).decode()
     html_audio = f"""
     <audio autoplay="true" style="display:none;">
@@ -177,8 +185,6 @@ def autoplay_html_audio(audio_obj, mime_type="audio/mp3"):
     </audio>
     """
     components.html(html_audio, height=0)
-
-
 # ---------------- Chat render function ----------------
 def render_chat():
     inner = ""
