@@ -316,7 +316,7 @@ with tab1:
         selected_voice_name = st.selectbox("Select Voice:", list(voice_options.keys()))
         st.session_state.interview_voice_id = voice_options[selected_voice_name]
         # Always show speak checkbox once interview has started
-        speak_flag = st.checkbox("🔊 Speak replies aloud", key="speak_flag")
+        speak_flag = st.checkbox("🔊 Speak replies aloud", key="speak_flag", value=True)
     else:
         st.info("No voices found in your ElevenLabs account. Please add a voice in ElevenLabs to enable text-to-speech features.")
 
@@ -358,7 +358,7 @@ with tab1:
                 with st.spinner("Generating voice..."):
                     audio = voice_client.text_to_speech.convert(
                         text=interview_question,
-                        voice=st.session_state.interview_voice_id,
+                        voice_id=st.session_state.interview_voice_id,
                         model_id="eleven_multilingual_v2"
                     )
                     autoplay_html_audio(audio)
@@ -417,7 +417,7 @@ with tab1:
                 with st.spinner("Generating voice..."):
                     audio = voice_client.text_to_speech.convert(
                         text=reply,
-                        voice="Rachel",
+                        voice_id=st.session_state.interview_voice_id,
                         model_id="eleven_multilingual_v2"
                     )
                     autoplay_html_audio(audio)
