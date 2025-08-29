@@ -12,6 +12,7 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
 from datetime import datetime
 import hashlib
+import base64
 
 
 logging.basicConfig(
@@ -201,7 +202,22 @@ def transcribe_with_elevenlabs_sdk(audio_bytes: bytes, timeout: int = 600) -> st
     except Exception as e:
         st.error(f"Transcription failed: {e}")
         return ""
+    
+def autoplay_audio(audio_bytes: bytes):
+    """Play audio automatically using an HTML5 <audio> tag with autoplay."""
+    b64 = base64.b64encode(audio_bytes).decode()
+    md = f"""
+    <audio autoplay="true">
+        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+    </audio>
+    """
+    components.html(md, height=0)
 
+def clear_audio_keys():
+    """Remove all stored audio blobs from session_state."""
+    audio_keys = [k for k in st.session_state.keys() if k.endswith("_audio")]
+    for k in audio_keys:
+        st.session_state.pop(k, None)
 # ---------------- Hybrid Chat Input ----------------
 def hybrid_chat_input(label="Reply to interviewer..."):
     """
@@ -323,6 +339,7 @@ with tab1:
             # log interview start time
             st.session_state["interview_start_time"] = datetime.now()
             st.session_state["interview_name"] = name
+            clear_audio_keys()
 
             # Clear only relevant keys
             for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended"]:
@@ -348,7 +365,7 @@ with tab1:
             # 🎤 Auto-speak the first question if enabled
             if auto_speak:
                 play_sound(interview_question, "first_question", st.session_state.interviewer_voiceid)
-                st.audio(st.session_state["first_question_audio"], format="audio/mp3")
+                autoplay_audio(st.session_state["first_question_audio"])
     # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
         if "story_stages" in st.session_state:
@@ -464,7 +481,7 @@ with tab1:
             # 7. Auto-speak interviewer replies if enabled
             if auto_speak:
                 play_sound(reply, f"reply_{len(st.session_state.messages)}", st.session_state.interviewer_voiceid)
-                st.audio(st.session_state[f"reply_{len(st.session_state.messages)}_audio"], format="audio/mp3")
+                autoplay_audio(st.session_state[f"reply_{len(st.session_state.messages)}_audio"])
 
             # 8. Refresh UI
             st.rerun()
@@ -474,6 +491,7 @@ with tab1:
 
         if st.button("🛑 End Interview"):
             st.session_state.interview_ended = True
+            clear_audio_keys()
 
         if st.session_state.interview_ended:
             st.session_state["interview_end_time"] = datetime.now()
