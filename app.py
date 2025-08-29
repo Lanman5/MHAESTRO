@@ -442,66 +442,67 @@ with tab1:
     # ------------------- End interview -------------------
     if st.button("🛑 End Interview"):
         st.session_state.interview_ended = True
-
-    if st.session_state.interview_ended:
         st.session_state["interview_end_time"] = datetime.now()
-        interview_length = st.session_state["interview_end_time"] - st.session_state["interview_start_time"]
-        total_seconds = interview_length.total_seconds()
-        minutes = int(total_seconds // 60)
-        seconds = int(total_seconds % 60)
+        st.session_state["interview_length"] = st.session_state["interview_end_time"] - st.session_state["interview_start_time"]
         
-        if 'transcript' not in st.session_state:
-            transcript_text = generate_transcript(st.session_state.messages, user_name=st.session_state.get("interview_name", "User"))
-            st.session_state['transcript'] = transcript_text + f"Interview length: {minutes} minutes, {seconds} seconds"
-            st.session_state.messages = [
-                {"role": "assistant", "content": f"Thank you {st.session_state.get('interview_name', 'User')} for sharing your story. This concludes our interview."}
-            ]
-            st.chat_message("assistant").markdown(st.session_state.messages[-1]["content"])
-            st.success("Interview ended. You can download your transcript below.")
-            st.info("Please wait until analysis has finished before generating a story...")
 
-        st.download_button(
-            label="📥 Download Transcript",
-            data=st.session_state['transcript'],
-            file_name=f"{st.session_state.get('interview_name', 'User')}_interview_transcript.txt",
-            mime="text/plain"
-        )
+    if 'interview_ended' in st.session_state:
+        if st.session_state["interview_ended"]:
+            if 'transcript' not in st.session_state:
+                total_seconds = st.session_state["interview_length"].total_seconds()
+                minutes = int(total_seconds // 60)
+                seconds = int(total_seconds % 60)
+                transcript_text = generate_transcript(st.session_state.messages, user_name=st.session_state.get("interview_name", "User"))
+                st.session_state['transcript'] = transcript_text + f"Interview length: {minutes} minutes, {seconds} seconds"
+                st.session_state.messages = [
+                    {"role": "assistant", "content": f"Thank you {st.session_state.get('interview_name', 'User')} for sharing your story. This concludes our interview."}
+                ]
+                st.chat_message("assistant").markdown(st.session_state.messages[-1]["content"])
+                st.success("Interview ended. You can download your transcript below.")
+                st.info("Please wait until analysis has finished before generating a story...")
 
-        if 'analysis' not in st.session_state:
-            with st.spinner("Analysing your interview..."):
-                analysis_context = ""
-                for selected_title in st.session_state.get("analysis_selected_files", []):
-                    for file_obj in st.session_state.get("titled_prereq_files", []):
-                        if file_obj["title"] == selected_title:
-                            analysis_context += f"\n\n----------{file_obj['title']}----------\n"
-                            analysis_context += file_obj["content"]
-                try:
-                    response = client.chat.completions.create(
-                        model=st.session_state.get("analysis_model", default_model),
-                        messages=[
-                            {"role": "system", "content": st.session_state.get("analysis_system_prompt", '') + analysis_context},  
-                            {"role": "user", "content": st.session_state.get("analysis_init_prompt", '') + "\n-------Transcript-------\n"+ st.session_state["transcript"]}
-                        ]
-                    )
-                    st.session_state['analysis'] = response.choices[0].message.content
-                    st.success("Analysis Complete! - You can now generate your own story!")
-                except Exception as e:
-                    st.error("Analysis failed - please re-interview")
-
-        if 'analysis' in st.session_state:
-            if st.button("📄 View Analysis"):
-                st.session_state['view_analysis'] = True
-
-            if st.session_state.get('view_analysis'):
-                with st.spinner("Loading analysis..."):
-                    st.text_area("Analysis:", value=st.session_state['analysis'], height=300)
-            
             st.download_button(
-            label="💾 Download Analysis",
-            data=st.session_state['analysis'],
-            file_name=f"{st.session_state.get('interview_name', 'User')}_interview_analysis.txt",
-            mime="text/plain"
-        )
+                label="📥 Download Transcript",
+                data=st.session_state['transcript'],
+                file_name=f"{st.session_state.get('interview_name', 'User')}_interview_transcript.txt",
+                mime="text/plain"
+            )
+
+            if 'analysis' not in st.session_state:
+                with st.spinner("Analysing your interview..."):
+                    analysis_context = ""
+                    for selected_title in st.session_state.get("analysis_selected_files", []):
+                        for file_obj in st.session_state.get("titled_prereq_files", []):
+                            if file_obj["title"] == selected_title:
+                                analysis_context += f"\n\n----------{file_obj['title']}----------\n"
+                                analysis_context += file_obj["content"]
+                    try:
+                        response = client.chat.completions.create(
+                            model=st.session_state.get("analysis_model", default_model),
+                            messages=[
+                                {"role": "system", "content": st.session_state.get("analysis_system_prompt", '') + analysis_context},  
+                                {"role": "user", "content": st.session_state.get("analysis_init_prompt", '') + "\n-------Transcript-------\n"+ st.session_state["transcript"]}
+                            ]
+                        )
+                        st.session_state['analysis'] = response.choices[0].message.content
+                        st.success("Analysis Complete! - You can now generate your own story!")
+                    except Exception as e:
+                        st.error("Analysis failed - please re-interview")
+
+            if 'analysis' in st.session_state:
+                if st.button("📄 View Analysis"):
+                    st.session_state['view_analysis'] = True
+
+                if st.session_state.get('view_analysis'):
+                    with st.spinner("Loading analysis..."):
+                        st.text_area("Analysis:", value=st.session_state['analysis'], height=300)
+                
+                st.download_button(
+                label="💾 Download Analysis",
+                data=st.session_state['analysis'],
+                file_name=f"{st.session_state.get('interview_name', 'User')}_interview_analysis.txt",
+                mime="text/plain"
+            )
 with tab2:
     if 'analysis' not in st.session_state:
         st.subheader("⚠️INTERVIEW NOT FOUND!", divider = "red")
