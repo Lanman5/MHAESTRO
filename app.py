@@ -196,37 +196,6 @@ def play_sound(text, key, voice_id):
     except Exception as e:
         st.error(f"Error occurred while playing sound: {e}")
 
-if "chat_html" not in st.session_state:
-    st.session_state.chat_html = """
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <div id="chat-container" style="
-        height:400px; 
-        overflow-y:auto; 
-        padding:10px; 
-        font-family: 'Inter', sans-serif;
-        font-size: 14px;
-        line-height: 1.5;
-        background-color: #f9f9f9;
-        border-radius: 8px;
-    ">
-    </div>
-    <script>
-        const el = document.getElementById('chat-container');
-        if (el) {
-            el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-        }
-    </script>
-    """
-
-def append_message(role, content):
-    """Append message into persistent chat HTML."""
-    role_label = "🧑‍💼 Interviewer" if role == "assistant" else f"🙋 {st.session_state['interview_name']}"
-    safe_content = escape(content).replace("\n", "<br>")
-    new_msg = f"<p><strong>{role_label}:</strong><br>{safe_content}</p><hr>"
-    st.session_state.chat_html = st.session_state.chat_html.replace(
-        "</div>", new_msg + "</div>", 1
-    )
-    chat_placeholder.html(st.session_state.chat_html, height=420, scrolling=False)
 prompt_list = read_csv()
 if not prompt_list:
     st.error("Failed to read prompts.")
@@ -334,15 +303,19 @@ with tab1:
             interview_question_template = st.session_state["first_question"]
             interview_question = interview_question_template.format_map(SafeDict(name=name))
 
+            # Initialise messages immediately
             st.session_state.messages = [
                 {"role": "system", "content": interview_prompt + interview_context},
                 {"role": "assistant", "content": interview_question}
             ]
+            st.session_state.interview_ended = False
+
+            st.success("Interview started!")
 
     # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
         inner = ""
-        for msg in st.session_state.messages[1:]:
+        for msg in st.session_state.messages[1:]:  # skip system
             if msg["role"] == "system":
                 continue
             role = "🧑‍💼 Interviewer" if msg["role"] == "assistant" else f"🙋 {st.session_state['interview_name']}"
@@ -370,11 +343,10 @@ with tab1:
             }}
         </script>
         """
-
         components.html(chat_html, height=420, scrolling=False)
 
     # ------------------- Chat Input (Hybrid) -------------------
-    if st.session_state.get("messages"):
+    if st.session_state.get("messages") and not st.session_state.get("interview_ended", False):
         st.markdown("### Reply")
 
         col1, col2 = st.columns([2,1])
@@ -467,15 +439,12 @@ with tab1:
                 with st.spinner("Generating voice..."):
                     audio = voice_client.text_to_speech.convert(
                         text=reply,
-                        voice="Rachel",   # or another available ElevenLabs voice
+                        voice="Rachel",   # or another ElevenLabs voice
                         model_id="eleven_multilingual_v2"
                     )
                     autoplay_html_audio(audio)  # autoplay in browser
 
         # End interview button
-        if 'interview_ended' not in st.session_state:
-            st.session_state.interview_ended = False
-
         if st.button("🛑 End Interview"):
             st.session_state.interview_ended = True
 
