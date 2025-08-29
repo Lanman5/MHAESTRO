@@ -240,6 +240,7 @@ with tab1:
     uploaded_file = st.file_uploader("Upload your JSON decision tree here:", type="json")
     if uploaded_file:
         st.session_state.decision_tree = json.load(uploaded_file)
+        st.session_state.max_depth = calculate_max_depth(st.session_state.decision_tree) # Calculate max depth once
     st.session_state["interviewee"] = st.text_input("Enter your Name:")
 
     if st.button("🎤 Begin Interview") :
