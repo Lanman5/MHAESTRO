@@ -275,19 +275,22 @@ with tab1:
             st.warning("Please ensure you have entered your name and a valid interview decision tree before starting.")
 
     #chatUI display            
-    if st.session_state.get("messages"):
-        #progres bar
-        if st.session_state.get("interview_in_progress") and not st.session_state.get("interview_ended"):
-            # Count all nodes visited so far (including current question, exclude root)
-            current_depth = max(0, len(st.session_state.stage_path) - 1)
-            # Total number of questions = max depth excluding root
-            max_depth = max(1, st.session_state.max_depth - 1)
+    if st.session_state.get("interview_in_progress") and not st.session_state.get("interview_ended"):
+        stage_path = st.session_state.get("stage_path", [])
+        max_depth = max(1, st.session_state.get("max_depth", 1) - 1)
 
-            # Progress should move as soon as first question is asked
-            progress_percentage = min(1.0, current_depth / max_depth)
+        # Depth = number of nodes visited (excluding root)
+        current_depth = max(0, len(stage_path) - 1)
 
-            st.markdown(f"##### __***Interview Progress: {int(progress_percentage * 100)}%***__")
-            st.progress(progress_percentage)
+        # Calculate percentage
+        progress_percentage = min(1.0, current_depth / max_depth)
+
+        # Debug info
+        st.write(f"DEBUG → stage_path length: {len(stage_path)}, current_depth: {current_depth}, max_depth: {max_depth}, progress: {progress_percentage:.2f}")
+
+        st.markdown(f"##### __***Interview Progress: {int(progress_percentage * 100)}%***__")
+        st.progress(progress_percentage)
+
 
         inner = ""
         for msg in st.session_state.messages[1:]:
