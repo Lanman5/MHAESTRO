@@ -95,6 +95,14 @@ def generate_csv(prompt, transcript):
     return None
 
 #tree navigation functions
+def calculate_max_depth(node):
+    if "children" not in node or not node["children"]:
+        return 1
+    max_child_depth = 0
+    for child in node["children"].values():
+        max_child_depth = max(max_child_depth, calculate_max_depth(child))
+    return 1 + max_child_depth
+
 def path_to_questions(decision_tree, path):
     questions = []
     for node_id in path:
@@ -267,6 +275,12 @@ with tab1:
 
     #chatUI display            
     if st.session_state.get("messages"):
+        #progres bar
+        if st.session_state.get("interview_in_progress") and not st.session_state.get("interview_ended"):
+            current_depth = len(st.session_state.stage_path)
+            progress_percentage = current_depth / st.session_state.max_depth
+            st.markdown("##### __***Interview Progress:***__")
+            st.progress(progress_percentage)
         inner = ""
         for msg in st.session_state.messages[1:]:
             if msg["role"] == "system":
