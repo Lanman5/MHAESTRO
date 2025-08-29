@@ -285,9 +285,6 @@ with tab1:
         # Calculate percentage
         progress_percentage = min(1.0, current_depth / max_depth)
 
-        # Debug info
-        st.write(f"DEBUG → stage_path length: {len(stage_path)}, current_depth: {current_depth}, max_depth: {max_depth}, progress: {progress_percentage:.2f}")
-
         st.markdown(f"##### __***Interview Progress: {int(progress_percentage * 100)}%***__")
         st.progress(progress_percentage)
 
