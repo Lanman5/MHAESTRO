@@ -330,7 +330,12 @@ tab1, tab2, tab3 = st.tabs(["🗨️Interview", "📚Storytelling","⚙️ Confi
 
 with tab1:
     st.title("🗣️Interviewer")
-    auto_speak = st.checkbox("🔊 Automatically speak interviewer responses")
+    auto_speak = st.checkbox("🔊 Automatically speak interviewer responses", value=True)
+    if auto_speak and "last_reply_to_speak" in st.session_state:
+        reply_text = st.session_state.pop("last_reply_to_speak")
+        play_sound(reply_text, "last_reply", st.session_state.interviewer_voiceid)
+        autoplay_audio(st.session_state["last_reply_audio"])
+    
     name = st.text_input("Enter your Name")
     if st.button("🎤 Begin Interview"):
         if not name:
@@ -478,10 +483,9 @@ with tab1:
             # 6. Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
-            # 7. Auto-speak interviewer replies if enabled
+            # 7. Auto-speak interviewer replies if enabled but push to next run due to rerun
             if auto_speak:
-                play_sound(reply, f"reply_{len(st.session_state.messages)}", st.session_state.interviewer_voiceid)
-                autoplay_audio(st.session_state[f"reply_{len(st.session_state.messages)}_audio"])
+                st.session_state["last_reply_to_speak"] = reply
 
             # 8. Refresh UI
             st.rerun()
