@@ -48,9 +48,6 @@ voice_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 voices_response = voice_client.voices.search()
 voice_options = {voice.name: voice.voice_id for voice in voices_response.voices}
 
-for voice in voices_response.voices:
-    st.write(f"Name: {voice.name}, ID: {voice.voice_id}")
-
 if not voice_options:
     st.error("No voices found in your account. Add a voice in ElevenLabs first.")
 
@@ -259,7 +256,8 @@ if "config_initialized" not in st.session_state:
         "config_initialized": True,
 
         #tts config
-        "TTS_model": "eleven_multilingual_v2" #set a default
+        "TTS_model": "eleven_multilingual_v2", #set a default
+        "interview_voiceid": "kBag1HOZlaVBH7ICPE8x"
 
     })
 
@@ -423,7 +421,7 @@ with tab1:
                 play_sound(
                     text=reply,
                     key=audio_key,
-                    voice_id="YOUR_DEFAULT_VOICE_ID"  # Replace with your ElevenLabs voice ID
+                    voice_id=st.session_state.interview_voiceid
                 )
 
                 audio_bytes = st.session_state[f"{audio_key}_audio"]
@@ -722,11 +720,14 @@ with tab3:
         st.session_state.pop("user_uploaded_prereq_files", None)
 
 
-    st.markdown("### Select Text-to-Speech model")
+    st.markdown("### Text-to-Speech Settings:")
+    selected_voice_name = st.selectbox("Select Voice:", list(voice_options.keys()))
+    st.session_state.interview_voice_id = voice_options[selected_voice_name]
+
     model_list = get_elevenlabs_model_list()
     if model_list:
         selected_model_id = st.selectbox(
-            "Select Model:",
+            "Select TTS Model:",
             model_list,
             key="TTS_model"
         )
