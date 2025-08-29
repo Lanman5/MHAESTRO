@@ -10,31 +10,32 @@ import streamlit.components.v1 as components
 from html import escape
 from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
+from datetime import datetime
 
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
 )
 
-# AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
+AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
 
-# def check_password():
-#     """Simple password protection."""
-#     if "authenticated" not in st.session_state:
-#         st.session_state["authenticated"] = False
+def check_password():
+    """Simple password protection."""
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
 
-#     if not st.session_state["authenticated"]:
-#         password = st.text_input("Enter the app password:", type="password")
-#         if password in AUTHORIZED_PASSWORDS:
-#             st.session_state["authenticated"] = True
-#             st.rerun()
-#         else:
-#             st.warning("Incorrect password")
-#             st.stop()
+    if not st.session_state["authenticated"]:
+        password = st.text_input("Enter the app password:", type="password")
+        if password in AUTHORIZED_PASSWORDS:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.warning("Incorrect password")
+            st.stop()
 
-# check_password()
+check_password()
 
-st.set_page_config(page_title="Inclusive Interviewer", page_icon="🧠", layout="centered")
+st.set_page_config(page_title="Spirit Engine 2.0", page_icon="🧠", layout="centered")
 
 st.title("🎙️Interviewer and Storyteller📖")
 
@@ -42,7 +43,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 # Fetch all available voices dynamically
-voice_client = ElevenLabs()
+voice_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 voices_response = voice_client.voices.search()
 voice_options = {voice.name: voice.voice_id for voice in voices_response.voices}
 
@@ -189,9 +190,9 @@ if not prompt_list:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "config_initialized" not in st.session_state:
-    if prompt_list and len(prompt_list) < 15:
+    if prompt_list and len(prompt_list) < 17:
 
-        st.error("Insufficient prompts in Default CSV configuration. Please ensure at least 15 entries.")
+        st.error("Insufficient prompts in Default CSV configuration. Please ensure at least 17 entries.")
         st.stop()
 
     init_file_data = []
@@ -213,6 +214,10 @@ if "config_initialized" not in st.session_state:
         "analysis_init_prompt": prompt_list[3][1],
         "analysis_model": default_model,
         "analysis_selected_files": [],
+
+        #First person narrative
+        "narrative_system_prompt": prompt_list[15][1],
+        "narrative_init_prompt": prompt_list[16][1],
 
         # Adult Stories
         "adult_system_prompt": prompt_list[4][1],
@@ -263,6 +268,9 @@ with tab1:
         if not name:
             st.warning("Please enter your name to start the interview.")
         else:
+            #log interview start time:
+            st.session_state["interview_start_time"] = datetime.now()
+
             st.session_state["interview_name"] = name
 
             # Clear only relevant keys
@@ -285,8 +293,17 @@ with tab1:
             {"role": "system", "content": interview_prompt + interview_context},
             {"role": "assistant", "content": interview_question}
         ]
+
 # ------------------- Chat Display -------------------
     if st.session_state.get("messages"):
+        if "story_stages" in st.session_state:
+            stages = st.session_state["story_stages"]
+            total = len(stages)
+            covered = sum(1 for v in stages.values() if v)
+            progress = covered / total
+
+            st.markdown("##### __***Interview Progress:***__")
+            st.progress(progress) 
         inner = ""
         for msg in st.session_state.messages[1:]:
             if msg["role"] == "system":
@@ -379,9 +396,14 @@ with tab1:
             st.session_state.interview_ended = True
 
         if st.session_state.interview_ended:
+            st.session_state["interview_end_time"] = datetime.now()
+            interview_length = st.session_state["interview_end_time"] - st.session_state["interview_start_time"]
+            total_seconds = interview_length.total_seconds()
+            minutes = int(total_seconds // 60)
+            seconds = int(total_seconds % 60)
             if 'transcript' not in st.session_state:
                 transcript_text = generate_transcript(st.session_state.messages, user_name=name)
-                st.session_state['transcript'] = transcript_text
+                st.session_state['transcript'] = transcript_text + f"Interview length: {minutes} minutes, {seconds} seconds"
                 st.session_state.messages = [
                     {"role": "assistant", "content": f"Thank you {name} for sharing your story. This concludes our interview."}
                 ]
@@ -435,7 +457,7 @@ with tab1:
 with tab2:
     if 'analysis' not in st.session_state:
         st.subheader("⚠️INTERVIEW NOT FOUND!", divider = "red")
-        st.markdown("#### *Please complete an interview in the previous tab so it can be analysed for storytelling or upload your own transcript below!*")
+        st.markdown("#### *Please complete an interview in the preivous tab so it can be analysed for storytelling or upload your own transcript below!*")
 
         user_transcript = st.file_uploader(
         "Upload your own transcript:", 
@@ -474,93 +496,112 @@ with tab2:
 
     else:
         st.title("📔Story Generation")
-        story_option = st.selectbox(
-             "What type of Story would you like to generate?",
-            ("Adult's Story", "Children's Story", "EYFS Story"),
-        )
-        if voice_options:
-            selected_voice_name = st.selectbox("Select Voice:", list(voice_options.keys()))
-            voice_id = voice_options[selected_voice_name]
-        if st.button("Generate Story"):   
-            if story_option == "Adult's Story":
-                st.session_state['generate_adult_story'] = True
+        if 'narrative' not in st.session_state:
+            with st.spinner("Generating narrative..."):
+                try:
+                    response = client.chat.completions.create(
+                            model=st.session_state["story_model_select"],
+                            messages=[
+                                {"role": "system", "content": st.session_state["narrative_system_prompt"]},
+                                {"role": "user", "content": st.session_state["narrative_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"] + "\n-------Transcript-------\n" + st.session_state["transcript"]}
+                            ]
+                        ) 
+                    st.session_state['narrative'] = response.choices[0].message.content
+                    st.success("Narrative Created! - You can now generate more stories!")
+                except Exception as e:
+                    st.error("Story Generation Failed - Please try again...")
+                    st.error(f"Error: {e}")
 
-            if story_option == "Children's Story":
-                st.session_state['generate_child_story'] = True
+        if 'narrative' in st.session_state:
+            with st.expander("View your Narrative", expanded=True):
+                st.text_area("Your Narrative Story", value=st.session_state['narrative'], height=500)
+            story_option = st.selectbox(
+                "What type of Story would you like to generate?",
+                ("Adult's Story", "Children's Story", "EYFS Story"),
+            )
+            if voice_options:
+                selected_voice_name = st.selectbox("Select Voice:", list(voice_options.keys()))
+                voice_id = voice_options[selected_voice_name]
+            if st.button("Generate Story"):   
+                if story_option == "Adult's Story":
+                    st.session_state['generate_adult_story'] = True
+
+                if story_option == "Children's Story":
+                    st.session_state['generate_child_story'] = True
+                        
+                if story_option == "EYFS Story":
+                    st.session_state['generate_eyfs_story'] = True 
+
+                if st.session_state.get('generate_adult_story'):
+                    with st.spinner("Writing your story..."):
+                        adult_story_context = ""
+                        for selected_title in st.session_state["adult_story_files"]:
+                            for file_obj in st.session_state["titled_prereq_files"]:
+                                if file_obj["title"] == selected_title:
+                                    adult_story_context += f"\n\n----------{file_obj['title']}----------\n"
+                                    adult_story_context += file_obj["content"]
+                        try:
+                            response = client.chat.completions.create(
+                                    model=st.session_state["story_model_select"],
+                                    messages=[
+                                        {"role": "system", "content": st.session_state["adult_system_prompt"] + adult_story_context},
+                                        {"role": "user", "content": st.session_state["adult_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]+ "\n-------Narrative-------\n"+ st.session_state["narrative"]}
+                                    ]
+                                )
+                            st.session_state['adult_story'] = response.choices[0].message.content
+                            play_sound(st.session_state['adult_story'], key="adult_voice", voice_id=voice_id)
+                            st.success("Story Created! - Enjoy!")
+                            st.session_state['generate_adult_story'] = False
+                        except Exception as e:
+                            st.error("Story Generation Failed - Please try again...")
+
+                if st.session_state.get('generate_child_story'):
+                    with st.spinner("Writing your story..."):
+                        child_story_context = ""
+                        for selected_title in st.session_state["child_story_files"]:
+                            for file_obj in st.session_state["titled_prereq_files"]:
+                                if file_obj["title"] == selected_title:
+                                    child_story_context += f"\n\n----------{file_obj['title']}----------\n"
+                                    child_story_context += file_obj["content"]
+                        try:
+                            response = client.chat.completions.create(
+                                    model=st.session_state["story_model_select"],
+                                    messages=[
+                                        {"role": "system", "content": st.session_state["child_system_prompt"] + child_story_context},
+                                        {"role": "user", "content": st.session_state["child_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"] + "\n-------Narrative-------\n"+ st.session_state["narrative"]}
+                                    ]
+                                )
+                            st.session_state['child_story'] = response.choices[0].message.content
+                            play_sound(st.session_state['child_story'], key="child_voice", voice_id=voice_id)
+                            st.success("Story Created! - Enjoy!")
+                            st.session_state['generate_child_story'] = False
+                        except Exception as e:
+                            st.error("Story Generation Failed - Please try again...")
+
                     
-            if story_option == "EYFS Story":
-                st.session_state['generate_eyfs_story'] = True 
 
-            if st.session_state.get('generate_adult_story'):
-                with st.spinner("Writing your story..."):
-                    adult_story_context = ""
-                    for selected_title in st.session_state["adult_story_files"]:
-                        for file_obj in st.session_state["titled_prereq_files"]:
-                            if file_obj["title"] == selected_title:
-                                adult_story_context += f"\n\n----------{file_obj['title']}----------\n"
-                                adult_story_context += file_obj["content"]
-                    try:
-                        response = client.chat.completions.create(
-                                model=st.session_state["story_model_select"],
-                                messages=[
-                                    {"role": "system", "content": st.session_state["adult_system_prompt"] + adult_story_context},
-                                    {"role": "user", "content": st.session_state["adult_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]}
-                                ]
-                            )
-                        st.session_state['adult_story'] = response.choices[0].message.content
-                        play_sound(st.session_state['adult_story'], key="adult_voice", voice_id=voice_id)
-                        st.success("Story Created! - Enjoy!")
-                        st.session_state['generate_adult_story'] = False
-                    except Exception as e:
-                        st.error("Story Generation Failed - Please try again...")
-
-            if st.session_state.get('generate_child_story'):
-                with st.spinner("Writing your story..."):
-                    child_story_context = ""
-                    for selected_title in st.session_state["child_story_files"]:
-                        for file_obj in st.session_state["titled_prereq_files"]:
-                            if file_obj["title"] == selected_title:
-                                child_story_context += f"\n\n----------{file_obj['title']}----------\n"
-                                child_story_context += file_obj["content"]
-                    try:
-                        response = client.chat.completions.create(
-                                model=st.session_state["story_model_select"],
-                                messages=[
-                                    {"role": "system", "content": st.session_state["child_system_prompt"] + child_story_context},
-                                    {"role": "user", "content": st.session_state["child_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]}
-                                ]
-                            )
-                        st.session_state['child_story'] = response.choices[0].message.content
-                        play_sound(st.session_state['child_story'], key="child_voice", voice_id=voice_id)
-                        st.success("Story Created! - Enjoy!")
-                        st.session_state['generate_child_story'] = False
-                    except Exception as e:
-                        st.error("Story Generation Failed - Please try again...")
-
-                
-
-            if st.session_state.get('generate_eyfs_story'):
-                with st.spinner("Writing your story..."):
-                    eyfs_story_context = ""
-                    for selected_title in st.session_state["eyfs_story_files"]:
-                        for file_obj in st.session_state["titled_prereq_files"]:
-                            if file_obj["title"] == selected_title:
-                                eyfs_story_context += f"\n\n----------{file_obj['title']}----------\n"
-                                eyfs_story_context += file_obj["content"]
-                    try:
-                        response = client.chat.completions.create(
-                                model=st.session_state["story_model_select"],
-                                messages=[
-                                    {"role": "system", "content": st.session_state["eyfs_system_prompt"] + eyfs_story_context},
-                                    {"role": "user", "content": st.session_state["eyfs_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]}
-                                ]
-                            )
-                        st.session_state['eyfs_story'] = response.choices[0].message.content
-                        play_sound(st.session_state['eyfs_story'], key="eyfs_voice")
-                        st.success("Story Created! - Enjoy!")
-                        st.session_state['generate_eyfs_story'] = False
-                    except Exception as e:
-                        st.error("Story Generation Failed - Please try again...")
+                if st.session_state.get('generate_eyfs_story'):
+                    with st.spinner("Writing your story..."):
+                        eyfs_story_context = ""
+                        for selected_title in st.session_state["eyfs_story_files"]:
+                            for file_obj in st.session_state["titled_prereq_files"]:
+                                if file_obj["title"] == selected_title:
+                                    eyfs_story_context += f"\n\n----------{file_obj['title']}----------\n"
+                                    eyfs_story_context += file_obj["content"]
+                        try:
+                            response = client.chat.completions.create(
+                                    model=st.session_state["story_model_select"],
+                                    messages=[
+                                        {"role": "system", "content": st.session_state["eyfs_system_prompt"] + eyfs_story_context},
+                                        {"role": "user", "content": st.session_state["eyfs_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]+ "\n-------Narrative-------\n"+ st.session_state["narrative"]}
+                                    ]
+                                )
+                            st.session_state['eyfs_story'] = response.choices[0].message.content
+                            play_sound(st.session_state['eyfs_story'], key="eyfs_voice", voice_id=voice_id)
+                            st.success("Story Created! - Enjoy!")
+                            st.session_state['generate_eyfs_story'] = False
+                        except Exception as e:
+                            st.error("Story Generation Failed - Please try again...")
 
     # Show stories if they exist
     if 'adult_story' in st.session_state:
@@ -683,8 +724,12 @@ with tab3:
         st.subheader("Story Generation Settings")
         st.selectbox("Select a model for storytelling", chat_models, key="story_model_select")
 
-        tab1as, tab2cs, tab3es = st.tabs(["👨‍🦰Adult Stories", "🧒Children's Stories"," 👶EYFS Stories"])
-        with tab1as:
+        tab1ns, tab2as, tab3cs, tab4es = st.tabs(["📃Narrative Settings", "👨‍🦰Adult Stories", "🧒Children's Stories"," 👶EYFS Stories"])
+        with tab1ns:
+            st.text_area("Narrative System Prompt:", key = "narrative_system_prompt",height = 350)
+            st.text_area("Narrative Initialisation Prompt",key = "narrative_init_prompt")
+
+        with tab2as:
             st.text_area("Adult Story System Prompt:", key = "adult_system_prompt",height = 350)
             st.text_area("Adult Story Initialisation Prompt",key = "adult_init_prompt")
 
@@ -694,7 +739,7 @@ with tab3:
             key="adult_story_files"
         )
 
-        with tab2cs:
+        with tab3cs:
             st.text_area("Children's Story System Prompt:", key = "child_system_prompt",height = 350)
             st.text_area("Children's Story Initialisation Prompt",key = "child_init_prompt")
 
@@ -704,7 +749,7 @@ with tab3:
             key="child_story_files"
         )
            
-        with tab3es:
+        with tab4es:
             st.text_area("EYFS Story System Prompt:", key = "eyfs_system_prompt",height = 350)
             st.text_area("EYFS Story Initialisation Prompt",key = "eyfs_init_prompt")
             st.multiselect(
