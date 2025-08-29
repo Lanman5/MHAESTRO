@@ -347,6 +347,9 @@ with tab1:
             for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended"]:
                 st.session_state.pop(key, None)
 
+            st.session_state["interview_start_time"] = datetime.now()
+            st.session_state["interview_end_time"] = None
+
             # Build context
             interview_context = ""
             for selected_title in st.session_state["interview_selected_files"]:
