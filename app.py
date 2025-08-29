@@ -211,20 +211,20 @@ def autoplay_audio(audio_bytes: bytes):
     import base64
     b64 = base64.b64encode(audio_bytes).decode()
     html_code = f"""
-    <script>
-        // Stop previous audio if it exists
-        if (window.currentAudio) {{
-            window.currentAudio.pause();
-            window.currentAudio.currentTime = 0;
-        }}
-        // Create new audio element and autoplay
-        const audio = new Audio("data:audio/mp3;base64,{b64}");
-        audio.autoplay = true;
-        window.currentAudio = audio;
-    </script>
+    <div style="height:0px; overflow:hidden; margin:0; padding:0;">
+        <script>
+            // Stop previous audio if it exists
+            if (window.currentAudio) {{
+                window.currentAudio.pause();
+                window.currentAudio.currentTime = 0;
+            }}
+            const audio = new Audio("data:audio/mp3;base64,{b64}");
+            audio.autoplay = true;
+            window.currentAudio = audio;
+        </script>
+    </div>
     """
     components.html(html_code, height=0)
-
 
 def clear_audio_keys():
     """Remove all stored audio blobs from session_state."""
