@@ -241,8 +241,15 @@ with tab1:
     st.subheader("🎙️Interview:")
     uploaded_file = st.session_state.get("decision_tree_file")
     if uploaded_file:
-        st.session_state.decision_tree = json.load(uploaded_file)
-        st.session_state.max_depth = calculate_max_depth(st.session_state.decision_tree) # Calculate max depth once
+        if isinstance(uploaded_file, str):
+            content = read_file(uploaded_file)
+        else:
+            content = uploaded_file.read().decode("utf-8")
+        st.session_state.decision_tree = json.loads(content)
+        st.session_state.max_depth = calculate_max_depth(st.session_state.decision_tree)
+    else:
+        st.error("No decision tree found - please upload your interview framework")
+        st.stop()
     st.session_state["interviewee"] = st.text_input("Enter your Name:")
 
     if st.button("🎤 Begin Interview") :
