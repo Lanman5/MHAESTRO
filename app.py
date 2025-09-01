@@ -243,15 +243,17 @@ def hybrid_chat_input(label="Reply to interviewer..."):
 
     with col2:
         audio = st.audio_input("🎙️ Speak", label_visibility="collapsed")
-        if st.button("🙊 Mute"):
-            st.markdown("""
-            <script>
-                if (window.currentAudio) {
-                    window.currentAudio.pause();
-                    window.currentAudio.currentTime = 0;
-                }
-            </script>
-            """, unsafe_allow_html=True)
+        if "auto_speak" in st.session_state:
+            if st.session_state.auto_speak:
+                if st.button("🙊 Mute"):
+                    st.markdown("""
+                    <script>
+                        if (window.currentAudio) {
+                            window.currentAudio.pause();
+                            window.currentAudio.currentTime = 0;
+                        }
+                    </script>
+                    """, unsafe_allow_html=True)
         if audio:
             audio_bytes = audio.read()
             # compute hash to uniquely identify this audio blob
