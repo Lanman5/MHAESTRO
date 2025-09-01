@@ -174,7 +174,7 @@ def move_to_next_stage(decision_tree, stage_path):
 if "config_initialized" not in st.session_state:
 
     st.session_state.update({
-        "decision_tree_file": "nanaBanana.json",
+        "current_decision_tree": "nanaBanana.json",
         "interview_in_progress": False,
         "interview_ended": False,
         "stage_path": [],
@@ -239,11 +239,12 @@ Your task is to convert an interview transcript into a structured **CSV file**.
 tab1, tab2 = st.tabs(["🗨️Interview","⚙️ Configuration"])
 with tab1:
     st.subheader("🎙️Interview:")
-    uploaded_file = st.session_state.get("decision_tree_file")
+    uploaded_file = st.session_state["current_decision_tree"] 
+
     if uploaded_file:
-        if isinstance(uploaded_file, str):
+        if isinstance(uploaded_file, str):  # default path
             content = read_file(uploaded_file)
-        else:
+        else:  # user uploaded file
             content = uploaded_file.read().decode("utf-8")
         st.session_state.decision_tree = json.loads(content)
         st.session_state.max_depth = calculate_max_depth(st.session_state.decision_tree)
@@ -423,7 +424,10 @@ with tab1:
                 )
 with tab2:
     st.title("⚙️ Settings")
-    st.file_uploader("Upload your JSON decision tree here:", type="json", key="decision_tree_file")
+    new_upload = st.file_uploader("Upload your JSON decision tree here:", type="json")
+    if new_upload is not None:
+        st.session_state["current_decision_tree"] = new_upload
+        st.success("New decision tree loaded for this session.")
     st.text_area("Interviewer Prompt:", key="interview_prompt", height=350)
     st.text_area("Steering Prompt:", key="steering_prompt", height=150)
     st.text_area("Decision Tree Prompt:", key="choice_prompt", height=350)
