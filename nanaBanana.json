@@ -1,0 +1,95 @@
+{
+  "id": "ask_name_meaning",
+  "question": "In a social situation, have you ever wondered or wanted to find out the meaning of somebody’s name?",
+  "objectives": ["Identify curiosity about the meaning of names in social contexts", "Determine comfort level in discussing personal name meanings"],
+  "children": {
+    "ask_name_trigger": {
+      "id": "ask_name_trigger",
+      "question": "What triggered you to ask this question?",
+      "objectives": ["Understand what motivates individuals to inquire about name meanings", "Gather context for social or cultural curiosity"],
+      "children": {
+        "ask_name_hesitation": {
+          "id": "ask_name_hesitation",
+          "question": "Can you describe what made you hesitant or uncomfortable about asking for a name's meaning?",
+          "objectives": ["Identify barriers, discomfort, or cultural sensitivity concerns", "Reveal emotional or social challenges tied to asking about names"],
+          "children": {}
+        }
+      }
+    },
+    "ask_importance_names": {
+      "id": "ask_importance_names",
+      "question": "Do you believe that it’s important to know the meaning of other people’s names?",
+      "objectives": ["Establish whether participants see value in knowing name meanings", "Understand the perceived social or cultural significance"],
+      "children": {
+        "ask_importance_why": {
+          "id": "ask_importance_why",
+          "question": "Why do you feel this way? Consider themes such as cultural appreciation, personal connection, social skills development, or any other aspect that comes to mind.",
+          "objectives": ["Explore reasoning and underlying values behind opinions", "Collect insight into personal, cultural, or social priorities"],
+          "children": {
+            "ask_diverse_thinker": {
+              "id": "ask_diverse_thinker",
+              "question": "Do you think an understanding of name etymology will make you a more diverse thinker and more EDI aware?",
+              "objectives": ["Evaluate whether learning about names contributes to diversity, equity, and inclusion (EDI) awareness", "Assess growth in open-mindedness"],
+              "children": {
+                "ask_diverse_yes": {
+                  "id": "ask_diverse_yes",
+                  "question": "Can you describe how your perspective or awareness of diversity and inclusion has changed since playing the game? Are there specific examples or experiences you can share?",
+                  "objectives": ["Gather concrete examples of changed perspectives", "Assess depth of EDI-related growth from experience"],
+                  "children": {
+                    "ask_cultural_curiosity": {
+                      "id": "ask_cultural_curiosity",
+                      "question": "Does knowledge about name etymology increase your curiosity about cultural histories and languages beyond just names and does this knowledge empower you within a social circle?",
+                      "objectives": ["Identify if curiosity expands beyond names into cultural and linguistic areas", "Determine if participants feel socially empowered by this knowledge"],
+                      "children": {
+                        "ask_curiosity_elaboration": {
+                          "id": "ask_curiosity_elaboration",
+                          "question": "Could you elaborate on how your curiosity about cultural histories and languages has increased? Additionally, can you provide examples of how this knowledge has empowered you or could empower you in future social interactions?",
+                          "objectives": ["Collect examples of cultural curiosity growth and social empowerment", "Understand practical application of new knowledge"],
+                          "children": {
+                            "ask_confidence_expansion": {
+                              "id": "ask_confidence_expansion",
+                              "question": "Could it encourage you to explore other cultural elements, engage more in diverse discussions, or approach social interactions with increased confidence or understanding?",
+                              "objectives": ["Assess likelihood of ongoing exploration and social confidence", "Measure potential for sustained inclusive engagement"],
+                              "children": {}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "ask_diverse_no": {
+                  "id": "ask_diverse_no",
+                  "question": "What do you think might be the reason you didn't experience a change in your perspective after playing the game?",
+                  "objectives": ["Identify reasons for no observed change in EDI awareness", "Understand individual or contextual barriers to growth"],
+                  "children": {
+                    "ask_cultural_curiosity_no_change": {
+                      "id": "ask_cultural_curiosity_no_change",
+                      "question": "Does knowledge about name etymology increase your curiosity about cultural histories and languages beyond just names and does this knowledge empower you within a social circle?",
+                      "objectives": ["Reassess curiosity and empowerment effects even without EDI change", "Explore if benefits can occur independently of perspective shifts"],
+                      "children": {
+                        "ask_curiosity_elaboration_no_change": {
+                          "id": "ask_curiosity_elaboration_no_change",
+                          "question": "Could you elaborate on how your curiosity about cultural histories and languages has increased? Additionally, can you provide examples of how this knowledge has empowered you or could empower you in future social interactions?",
+                          "objectives": ["Collect examples of curiosity or empowerment in absence of EDI change", "Document nuanced outcomes"],
+                          "children": {
+                            "ask_confidence_expansion_no_change": {
+                              "id": "ask_confidence_expansion_no_change",
+                              "question": "Could it encourage you to explore other cultural elements, engage more in diverse discussions, or approach social interactions with increased confidence or understanding?",
+                              "objectives": ["Determine potential secondary benefits despite unchanged perspective", "Measure curiosity-driven engagement opportunities"],
+                              "children": {}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

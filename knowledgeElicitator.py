@@ -174,13 +174,14 @@ def move_to_next_stage(decision_tree, stage_path):
 if "config_initialized" not in st.session_state:
 
     st.session_state.update({
+        "decision_tree_file": "nanaBanana.json",
         "interview_in_progress": False,
         "interview_ended": False,
         "stage_path": [],
         "decision_tree": {},
         "current_node": None,
         # Interviewer
-        "interview_prompt": """You are a knowledge elicitation expert conducting an in-depth and structured interview with {name}, who is a student returning from their placement. 
+        "interview_prompt": """You are a knowledge elicitation expert conducting an in-depth and structured interview with {name}, who is a player who has just played a new board game about teaching people about the etymology of names from different regions. 
 By asking perceptive questions and following the framework outlined by this expertly crafted interview JSON decision tree {tree} , you should be able to gain in depth and perceptive answers from the student required from that question.
 When interviewing the student, make sure your questions are put forward in a natural and conservational way while making sure it aligns with the current stage, ensuring you don’t invent any unrelated questions outside that current stage.
 
@@ -238,7 +239,7 @@ Your task is to convert an interview transcript into a structured **CSV file**.
 tab1, tab2 = st.tabs(["🗨️Interview","⚙️ Configuration"])
 with tab1:
     st.subheader("🎙️Interview:")
-    uploaded_file = st.file_uploader("Upload your JSON decision tree here:", type="json")
+    uploaded_file = st.session_state.get("decision_tree_file")
     if uploaded_file:
         st.session_state.decision_tree = json.load(uploaded_file)
         st.session_state.max_depth = calculate_max_depth(st.session_state.decision_tree) # Calculate max depth once
@@ -415,6 +416,7 @@ with tab1:
                 )
 with tab2:
     st.title("⚙️ Settings")
+    st.file_uploader("Upload your JSON decision tree here:", type="json", key="decision_tree_file")
     st.text_area("Interviewer Prompt:", key="interview_prompt", height=350)
     st.text_area("Steering Prompt:", key="steering_prompt", height=150)
     st.text_area("Decision Tree Prompt:", key="choice_prompt", height=350)
