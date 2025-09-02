@@ -195,6 +195,7 @@ Your approach:
 • Ensure you are properly following the interview decision tree
 • Keep interviewees on track and ensure consistent coverage of essential topics.
 • You will be reminded by assistant agents what stage/question of the interview you are currently on, ensure you stick to that.
+• Don't ask for too many specific details, try and obtain generalised answers while still allowing for depth, detail and insight.
 Your goal is to follow the interview framework to be able to elicit enough information that is of a high and insightful level in order to understand that students experiences on placements and how we can use their experiences to improve the experiences and prospects of future placement students. You can where appropriate use closed questions to be able to extract some details from the user quickly.
 """,
 
@@ -203,7 +204,10 @@ Your goal is to follow the interview framework to be able to elicit enough infor
     The interviewer is currently at the stage in the interview decision tree: {stage}.
     Determine if the interviewee's last response sufficiently answers this stage with a perceptive level of detail in order to be able to move on in the interview.
     Return ONLY JSON strictly in this format:
-    {{"adequate": true/false, "reason": "short explanation that will tell the interviewer how to probe further to collect adequate information."}}""",
+    {{"adequate": true/false, "reason": "short explanation that will tell the interviewer how to probe further to collect adequate information."}}
+
+    However, keep track of the transcript, and if you sense that you find that the interviewer has repeated themselves or are have probed on the same node/question twice with no sufficient progress, instruct the interviewer to move onto the next question by returning adequate as true even if the question may not be fully answered. Guage on interviewee mood and adjust your approach accordingly.
+    """,
 
         "choice_prompt": """You are an expert interview analyst, monitoring an ongoing interview transcript helping to navigate a structured interview decision tree.
 
@@ -216,7 +220,7 @@ Your goal is to follow the interview framework to be able to elicit enough infor
     {options_text}
 
     Return ONLY a JSON object like:
-    {{"next_key": "<selected_child_key>", "reason": "<short reason dictating why you have chosen this path.>"}}""",
+    {{"next_key": "<selected_child_key>", "reason": "<short reason dictating why you have chosen this path.>"}}. """,
 
         "csv_prompt": """You are an expert transcript analyst.  
 Your task is to convert an interview transcript into a structured **CSV file**.  
@@ -284,7 +288,8 @@ with tab1:
         else:
             st.warning("Please ensure you have entered your name and a valid interview decision tree before starting.")
 
-    #chatUI display            
+    #chatUI display
+    #st.write(f"Current Node: {st.session_state.current_node.get('id', 'N/A') if st.session_state.get('current_node') else 'N/A'}")
     if st.session_state.get("interview_in_progress") and not st.session_state.get("interview_ended"):
         stage_path = st.session_state.get("stage_path", [])
         max_depth = max(1, st.session_state.get("max_depth", 1) - 1)
@@ -383,45 +388,45 @@ with tab1:
         if st.button("🛑 End Interview"):
             st.session_state.interview_ended = True
 
-        if st.session_state.interview_ended:
-            # Only do transcript/CSV generation once
-            if not st.session_state.get("finalised", False):
-                transcript_text = generate_transcript(st.session_state.messages)
-                st.session_state['transcript'] = transcript_text
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": f"Thank you {st.session_state['interviewee']}, that's all the questions we have for today. Thank you for taking the time to share your placement experience. This concludes our interview."
-                })
-                st.success("Interview ended. You can download your transcript below.")
-                st.info("Please wait until analysis has finished before downloading data...")
+    if st.session_state.interview_ended:
+        # Only do transcript/CSV generation once
+        if not st.session_state.get("finalised", False):
+            transcript_text = generate_transcript(st.session_state.messages)
+            st.session_state['transcript'] = transcript_text
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": f"Thank you {st.session_state['interviewee']}, that's all the questions we have for today. Thank you for taking the time to share your placement experience. This concludes our interview."
+            })
+            st.success("Interview ended. You can download your transcript below.")
+            st.info("Please wait until analysis has finished before downloading data...")
 
-                csv_output = generate_csv(st.session_state["csv_prompt"], transcript_text)
-                if csv_output:
-                    st.session_state["csv_output"] = csv_output
-                    st.success("✅ CSV generated successfully!")
-                else:
-                    st.error("❌ Could not generate valid CSV after 5 retries.")
+            csv_output = generate_csv(st.session_state["csv_prompt"], transcript_text)
+            if csv_output:
+                st.session_state["csv_output"] = csv_output
+                st.success("✅ CSV generated successfully!")
+            else:
+                st.error("❌ Could not generate valid CSV after 5 retries.")
 
-                st.session_state["finalised"] = True
+            st.session_state["finalised"] = True
 
-                st.rerun()
+            st.rerun()
 
-            # After finalization, just render downloads
-            if 'transcript' in st.session_state:
-                st.download_button(
-                    label="📥 Download Transcript",
-                    data=st.session_state['transcript'],
-                    file_name=f"{st.session_state['interviewee']}_interview_transcript.txt",
-                    mime="text/plain"
-                )
+        # After finalization, just render downloads
+        if 'transcript' in st.session_state:
+            st.download_button(
+                label="📥 Download Transcript",
+                data=st.session_state['transcript'],
+                file_name=f"{st.session_state['interviewee']}_interview_transcript.txt",
+                mime="text/plain"
+            )
 
-            if "csv_output" in st.session_state and st.session_state["csv_output"]:
-                st.download_button(
-                    label="💾 Download CSV",
-                    data=st.session_state["csv_output"],
-                    file_name=f"{st.session_state['interviewee']}_interview.csv",
-                    mime="text/csv"
-                )
+        if "csv_output" in st.session_state and st.session_state["csv_output"]:
+            st.download_button(
+                label="💾 Download CSV",
+                data=st.session_state["csv_output"],
+                file_name=f"{st.session_state['interviewee']}_interview.csv",
+                mime="text/csv"
+            )
 with tab2:
     st.title("⚙️ Settings")
     new_upload = st.file_uploader("Upload your JSON decision tree here:", type="json")
