@@ -236,7 +236,8 @@ Your task is to convert an interview transcript into a structured **CSV file**.
 5. Do **not invent, summarise, or expand** beyond what is in the transcript.  
 6. Ensure the CSV is valid and parsable — one row per question.  
 7. Use plain text commas as delimiters. Escape any quotes or commas inside fields properly.""",
-        "config_initialized": True
+        "config_initialized": True,
+        "evaluation_questions": ["In a social situation, have you ever wondered or wanted to find out the meaning of somebody’s name?", "If yes, what triggered you to ask that question", "Do you believe it's important to know the meaning of other people's names?", "Does an understanding of name etymology make you a more diverse thinker and EDI aware?", "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"]
     })
 
 #MAIN PROGRAM
@@ -437,3 +438,21 @@ with tab2:
     st.text_area("Steering Prompt:", key="steering_prompt", height=150)
     st.text_area("Decision Tree Prompt:", key="choice_prompt", height=350)
     st.text_area("CSV Generation Prompt:", key="csv_prompt", height=250)
+
+    with st.expander("Edit Evaluation Questions"):
+        updated = []
+
+        for i, q in enumerate(st.session_state.evaluation_questions):
+            cols = st.columns([8, 2])
+            new_q = cols[0].text_input(f"Question {i+1}", value=q, key=f"q_{i}")
+            if not cols[1].button("Remove", key=f"remove_{i}"):
+                updated.append(new_q)
+
+        if st.button("Add New Question"):
+            updated.append("New question text here...")
+
+        if updated != st.session_state.evaluation_questions:
+            st.session_state.evaluation_questions = updated
+            st.rerun()  # use st.rerun instead of experimental_rerun
+
+        st.write("Current Questions in Session State:", st.session_state.evaluation_questions)
