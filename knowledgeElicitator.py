@@ -236,6 +236,41 @@ Your task is to convert an interview transcript into a structured **CSV file**.
 5. Do **not invent, summarise, or expand** beyond what is in the transcript.  
 6. Ensure the CSV is valid and parsable — one row per question.  
 7. Use plain text commas as delimiters. Escape any quotes or commas inside fields properly.""",
+
+        "evaluation_prompt": f"""You are an expert qualitative analyst. You will receive:
+
+1. An interview transcript.
+2. A list of five evaluation questions.
+
+Your task:
+
+- Carefully analyze the interview transcript in depth.
+- Use only the interviewee’s own responses (no external assumptions).
+- For each evaluation question, write a summary answer in no more than 3 sentences.
+- Each answer must use specific details from the interviewee's responses whenever possible.
+- Do not repeat the transcript verbatim; paraphrase concisely while keeping the meaning faithful.
+
+Output format (JSON):
+
+{{
+  "answers": [
+    {{
+      "question": "<evaluation question 1>",
+      "summary_answer": "<3-sentence answer based only on the interviewee's responses>"
+    }},
+    {{
+      "question": "<evaluation question 2>",
+      "summary_answer": "<3-sentence answer based only on the interviewee's responses>"
+    }}
+    // ... one object per question
+  ]
+}}
+Interview transcript:
+{st.session_state.get('transcript', '')}
+
+Evaluation questions:
+{st.session_state.get('evaluation_questions', ["In a social situation, have you ever wondered or wanted to find out the meaning of somebody’s name?", "If yes, what triggered you to ask that question", "Do you believe it's important to know the meaning of other people's names?", "Does an understanding of name etymology make you a more diverse thinker and EDI aware?", "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"])}
+""",
         "config_initialized": True,
         "evaluation_questions": ["In a social situation, have you ever wondered or wanted to find out the meaning of somebody’s name?", "If yes, what triggered you to ask that question", "Do you believe it's important to know the meaning of other people's names?", "Does an understanding of name etymology make you a more diverse thinker and EDI aware?", "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"]
     })
