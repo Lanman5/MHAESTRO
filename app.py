@@ -250,45 +250,55 @@ def clear_audio_keys():
     for k in audio_keys:
         st.session_state.pop(k, None)
 # ---------------- Hybrid Chat Input ----------------
-def hybrid_chat_input(label="Reply to interviewer..."):
+def hybrid_chat_input(label="Reply to interviewer...", disabled=False):
     """
     Provides both text and audio input.
     Ensures session_state is not wiped when using st.audio_input.
+    Now supports a `disabled` flag to disable input when chat is locked.
     """
     col1, col2 = st.columns([3, 1])
     user_input = None
 
     with col1:
-        typed = st.chat_input(label)
-        if typed:
-            user_input = typed
+        # If disabled, render a disabled text input instead of st.chat_input
+        if disabled:
+            st.text_input(label, value="", placeholder="Chat is disabled.", disabled=True, label_visibility="collapsed")
+        else:
+            typed = st.chat_input(label)
+            if typed:
+                user_input = typed
 
     with col2:
-        audio = st.audio_input("🎙️ Speak", label_visibility="collapsed")
-        if "auto_speak" in st.session_state:
-            if st.session_state.auto_speak:
-                if st.button("🙊 Mute"):
-                    st.markdown("""
-                    <script>
-                        if (window.currentAudio) {
-                            window.currentAudio.pause();
-                            window.currentAudio.currentTime = 0;
-                        }
-                    </script>
-                    """, unsafe_allow_html=True)
-        if audio:
-            audio_bytes = audio.read()
-            # compute hash to uniquely identify this audio blob
-            fingerprint = hashlib.sha256(audio_bytes).hexdigest()
-            processed_ids = st.session_state.setdefault("processed_audio_ids", set())
+        if disabled:
+            # Render a disabled button-like placeholder instead of the audio input
+            st.text_input("🎙️ Speak", value="", disabled=True, label_visibility="collapsed")
+        else:
+            audio = st.audio_input("🎙️ Speak", label_visibility="collapsed")
+            if "auto_speak" in st.session_state:
+                if st.session_state.auto_speak:
+                    if st.button("🙊 Mute"):
+                        st.markdown("""
+                        <script>
+                            if (window.currentAudio) {
+                                window.currentAudio.pause();
+                                window.currentAudio.currentTime = 0;
+                            }
+                        </script>
+                        """, unsafe_allow_html=True)
+            if audio:
+                audio_bytes = audio.read()
+                # compute hash to uniquely identify this audio blob
+                fingerprint = hashlib.sha256(audio_bytes).hexdigest()
+                processed_ids = st.session_state.setdefault("processed_audio_ids", set())
 
-            if fingerprint not in processed_ids:
-                transcript = transcribe_with_elevenlabs_sdk(audio_bytes)
-                if transcript:
-                    user_input = transcript
-                    processed_ids.add(fingerprint)
+                if fingerprint not in processed_ids:
+                    transcript = transcribe_with_elevenlabs_sdk(audio_bytes)
+                    if transcript:
+                        user_input = transcript
+                        processed_ids.add(fingerprint)
 
     return user_input
+
 
 def generate_testing_report():
     with st.spinner("Generating testing report - please do not leave this page"):
@@ -551,9 +561,8 @@ with tab1:
                 autoplay_audio(st.session_state["last_reply_audio"])
 
     # ------------------- Chat Input -------------------
-    st.session_state.chat_locked = st.session_state.get("interview_ended", False) or st.session_state.get("safeguarding_flag", False)
-    if st.session_state.get("messages") and not st.session_state.chat_locked:
-        if user_input := hybrid_chat_input("Type or speak your reply..."):
+    if st.session_state.get("messages"):
+        if user_input := hybrid_chat_input("Type or speak your reply...", disabled=st.session_state.get("chat_locked", False)):
             st.session_state.messages.append({"role": "user", "content": user_input})
 
             all_vars_covered = True
@@ -588,6 +597,7 @@ with tab1:
                     "The interviewee has indicated that either themselves or somebody else is at risk of harm. "
                     "Please end the interview immediately and advise them to seek help ensuring you don't ask any follow up questions."
                 )
+                st.session_state["chat_locked"] = True
             elif all_vars_covered:
                 steering_instruction = (
                     "All criteria have been covered. Please thank the interviewee and ask them if there's "
@@ -624,12 +634,8 @@ with tab1:
             # 7. Auto-speak interviewer replies if enabled but push to next run due to rerun
             if auto_speak:
                 st.session_state["last_reply_to_speak"] = reply
-            
-            #8.lock chat if safeguarding concern is flagged
-            if st.session_state.get("safeguarding_flag", False):
-                st.session_state.chat_locked = True
 
-            # 9. Refresh UI
+            # 8. Refresh UI
             st.rerun()
 
         if 'interview_ended' not in st.session_state:
@@ -638,9 +644,9 @@ with tab1:
         if st.button("🛑 End Interview"):
             st.session_state.interview_ended = True
             clear_audio_keys()
+            st.session_state.chat_locked = True  
 
         if st.session_state.interview_ended:
-            st.session_state.chat_locked = True
             st.session_state["interview_end_time"] = datetime.now()
             interview_length = st.session_state["interview_end_time"] - st.session_state["interview_start_time"]
             total_seconds = interview_length.total_seconds()
@@ -698,9 +704,7 @@ with tab1:
                 file_name=f"{name}_interview_analysis.txt",
                 mime="text/plain"
             )
-    else:
-        if st.session_state.get("chat_locked", False):
-            st.info("Chat is disabled - please start another session by pressing begin interview")
+
 with tab2:
     if 'analysis' not in st.session_state:
         st.subheader("⚠️INTERVIEW NOT FOUND!", divider = "red")
