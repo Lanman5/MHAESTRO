@@ -12,7 +12,8 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
 from datetime import datetime
 import hashlib
-import base64
+import smtplib
+from email.message import EmailMessage
 
 
 logging.basicConfig(
@@ -20,23 +21,27 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
 )
 
-AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
+# AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
+MY_APP_PASSWORD = st.secrets.get("MY_APP_PASSWORD")
+MY_EMAIL = "alannaky6@gmail.com"
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 465
 
-def check_password():
-    """Simple password protection."""
-    if "authenticated" not in st.session_state:
-        st.session_state["authenticated"] = False
+# def check_password():
+#     """Simple password protection."""
+#     if "authenticated" not in st.session_state:
+#         st.session_state["authenticated"] = False
 
-    if not st.session_state["authenticated"]:
-        password = st.text_input("Enter the app password:", type="password")
-        if password in AUTHORIZED_PASSWORDS:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.warning("Incorrect password")
-            st.stop()
+#     if not st.session_state["authenticated"]:
+#         password = st.text_input("Enter the app password:", type="password")
+#         if password in AUTHORIZED_PASSWORDS:
+#             st.session_state["authenticated"] = True
+#             st.rerun()
+#         else:
+#             st.warning("Incorrect password")
+#             st.stop()
 
-check_password()
+# check_password()
 
 st.set_page_config(page_title="Spirit Engine 2.0", page_icon="🧠", layout="centered")
 
@@ -143,6 +148,23 @@ def analyze_story_stages(messages, analysis_model, analysis_prompt):
     logging.debug("Raw analysis result: %s", result)
     return json_check(result)
 
+def send_email(body, attachment_content, attachment_filename):
+    msg = EmailMessage()
+    msg["From"] = MY_EMAIL
+    msg["To"] = "A.Naky@lboro.ac.uk"
+    msg["Subject"] = f"Testing Report for {st.session_state.get('interview_name', 'Unknown')}"
+    msg.set_content(body)
+    msg.add_attachment(
+        attachment_content,
+        maintype="text",
+        subtype="plain",
+        filename=attachment_filename
+    )
+
+    with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as smtp:
+        smtp.login(MY_EMAIL, MY_APP_PASSWORD)
+        smtp.send_message(msg)
+
 def read_csv():
     DEFAULT_FILE_PATH = "default_prompts.csv"
     string_data = None  
@@ -175,7 +197,7 @@ def play_sound(text, key, voice_id):
                     stability=0.5,
                     similarity_boost=0.75,
                     style=0.1,
-                    speed=1.2,
+                    speed=1.1,
                     use_speaker_boost=True
                 )
             )
@@ -268,6 +290,85 @@ def hybrid_chat_input(label="Reply to interviewer..."):
 
     return user_input
 
+def generate_testing_report():
+    with st.spinner("Generating testing report - please do not leave this page"):
+        return_text = "==================================================================================================="
+        if 'transcript' in st.session_state:
+            return_text = f"****Testing report for {st.session_state.get('interview_name', 'UNKNOWN')}****\n"
+            return_text += "===================================================================================================\n"
+            return_text += f"Interview transcript: \n {st.session_state.get('interview_transcript', 'NO TRANSCRIPT AVAILABLE')}\n\n"
+            return_text += f"Analysis: \n {st.session_state.get('analysis', 'NO ANALYSIS AVAILABLE')}\n\n"
+            return_text += f"Generated Narrative: \n {st.session_state.get('narrative', 'NO NARRATIVE AVAILABLE')}"
+
+            if 'narrative' in st.session_state: #for each type of story, if it exists, add it in, else generate what would've been made
+                if 'adult_story' in st.session_state:
+                    return_text += f"Adult Story: \n {st.session_state.get('adult_story', 'ERROR FETCHING ADULT STORY')}\n\n"
+                else:
+                    adult_story_context = ""
+                    for selected_title in st.session_state["adult_story_files"]:
+                        for file_obj in st.session_state["titled_prereq_files"]:
+                            if file_obj["title"] == selected_title:
+                                adult_story_context += f"\n\n----------{file_obj['title']}----------\n"
+                                adult_story_context += file_obj["content"]
+                    try:
+                        response = client.chat.completions.create(
+                                model=st.session_state["story_model_select"],
+                                messages=[
+                                    {"role": "system", "content": st.session_state["adult_system_prompt"] + adult_story_context},
+                                    {"role": "user", "content": st.session_state["adult_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state.get('analysis', 'NO ANALYSIS AVAILABLE')+ "\n-------Narrative-------\n"+ st.session_state.get('narrative', 'NO NARRATIVE AVAILABLE')}
+                                ]
+                            )
+                        return_text += "Adult Story [NOT GENERATED BY USER]:\n" + response.choices[0].message.content
+                    except Exception as e:
+                        st.error(f"Error generating adult story: {e}")
+
+                if 'child_story' in st.session_state:
+                    return_text += f"Child Story: \n {st.session_state.get('child_story', 'ERROR FETCHING CHILD STORY')}\n\n"
+                else:
+                    child_story_context = ""
+                    for selected_title in st.session_state["child_story_files"]:
+                        for file_obj in st.session_state["titled_prereq_files"]:
+                            if file_obj["title"] == selected_title:
+                                child_story_context += f"\n\n----------{file_obj['title']}----------\n"
+                                child_story_context += file_obj["content"]
+                    try:
+                        response = client.chat.completions.create(
+                                model=st.session_state["story_model_select"],
+                                messages=[
+                                    {"role": "system", "content": st.session_state["child_system_prompt"] + child_story_context},
+                                    {"role": "user", "content": st.session_state["child_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state.get('analysis', 'NO ANALYSIS AVAILABLE')+ "\n-------Narrative-------\n"+ st.session_state.get('narrative', 'NO NARRATIVE AVAILABLE')}
+                                ]
+                            )
+                        return_text += "Child Story [NOT GENERATED BY USER]:\n" + response.choices[0].message.content
+                    except Exception as e:
+                        st.error(f"Error generating child story: {e}")
+
+                if 'eyfs_story' in st.session_state:
+                    return_text += f"EYFS Story: \n {st.session_state.get('eyfs_story', 'ERROR FETCHING EYFS STORY')}\n\n"
+                else:
+                    eyfs_story_context = ""
+                    for selected_title in st.session_state["eyfs_story_files"]:
+                        for file_obj in st.session_state["titled_prereq_files"]:
+                            if file_obj["title"] == selected_title:
+                                eyfs_story_context += f"\n\n----------{file_obj['title']}----------\n"
+                                eyfs_story_context += file_obj["content"]
+                    try:
+                        response = client.chat.completions.create(
+                                model=st.session_state["story_model_select"],
+                                messages=[
+                                    {"role": "system", "content": st.session_state["eyfs_system_prompt"] + eyfs_story_context},
+                                    {"role": "user", "content": st.session_state["eyfs_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state.get('analysis', 'NO ANALYSIS AVAILABLE')+ "\n-------Narrative-------\n"+ st.session_state.get('narrative', 'NO NARRATIVE AVAILABLE')}
+                                ]
+                            )
+                        return_text += "EYFS Story [NOT GENERATED BY USER]:\n" + response.choices[0].message.content
+                    except Exception as e:
+                        st.error(f"Error generating EYFS story: {e}")
+            else:
+                return_text += "NO STORIES WERE GENERATED IN THIS SESSION"
+        else:
+            st.error("TESTING REPORT COULD NOT BE GENERATED")
+            st.stop()
+            return "<TESTING REPORT ERROR>"
 prompt_list = read_csv()
 if not prompt_list:
     st.error("Failed to read prompts.")
@@ -394,7 +495,7 @@ with tab1:
             covered = sum(1 for v in stages.values() if v)
             progress = covered / total
 
-            st.markdown("##### __***Interview Progress:***__")
+            st.markdown(f"##### __***Interview Progress: {int(progress * 100)}%***__")
             st.progress(progress)
 
         inner = ""
@@ -563,7 +664,7 @@ with tab1:
                             ]
                         )
                         st.session_state['analysis'] = response.choices[0].message.content
-                        st.success("Analysis Complete! - You can now generate your own story!")
+                        st.success("Analysis Complete! - You can now generate your own story by pressing on the 'Storytelling' tab!")
                     except Exception as e:
                         st.error("Analysis failed - please re-interview")
 
@@ -748,6 +849,35 @@ with tab2:
             st.text_area("Your EYFS Story", value=st.session_state['eyfs_story'], height=500)
             if "eyfs_voice_audio" in st.session_state:
                 st.audio(st.session_state["eyfs_voice_audio"], format="audio/mp3")
+
+    #test report and email button
+    if 'narrative' in st.session_state:
+        if st.button("Generate, Download & Email"):
+            # Step 1: Generate text
+            text_result = generate_testing_report()
+
+            # Step 2: Prepare file in memory for download
+            file_name = "generated_text.txt"
+            file_bytes = BytesIO(text_result.encode("utf-8"))
+
+            # Step 3: Show download button
+            st.download_button(
+                label="📑 Generate and Submit your testing report",
+                data=file_bytes,
+                file_name=file_name,
+                mime="text/plain"
+            )
+
+            # Step 4: Email a copy
+            try:
+                send_email(
+                    body="Please find attached the testing report generated for the participant: .",
+                    attachment_content=text_result.encode("utf-8"),
+                    attachment_filename=file_name
+                )
+                st.success("✅ File successfully submitted - thank you so much for taking the time to test Spirit Engine 2.0!")
+            except Exception as e:
+                st.error("⚠️ Could not send email: Please email your testing file to A.Naky@lboro.ac.uk")
 
 with tab3:
     st.title("Settings")    
