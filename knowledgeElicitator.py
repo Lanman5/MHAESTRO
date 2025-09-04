@@ -470,42 +470,43 @@ with tab1:
                     st.session_state.likert_scores[idx] = score
 
             if st.button("📑 Generate and Submit your testing report"):
-                # Step 1: Build a dataframe for the CSV
-                df = pd.DataFrame([
-                    {
-                        "Question": item["question"],
-                        "Summary Answer": item["summary_answer"],
-                        "Likert Score": st.session_state.likert_scores.get(idx, "")
-                    }
-                    for idx, item in enumerate(evaluation_json["answers"])
-                ])
+                with st.spinner("Submitting your results - please do not leave this page"):
+                    # Step 1: Build a dataframe for the CSV
+                    df = pd.DataFrame([
+                        {
+                            "Question": item["question"],
+                            "Summary Answer": item["summary_answer"],
+                            "Likert Score": st.session_state.likert_scores.get(idx, "")
+                        }
+                        for idx, item in enumerate(evaluation_json["answers"])
+                    ])
 
-                # Step 2: Convert to CSV in memory
-                csv_buffer = StringIO()
-                df.to_csv(csv_buffer, index=False)
-                csv_bytes = csv_buffer.getvalue().encode("utf-8")
+                    # Step 2: Convert to CSV in memory
+                    csv_buffer = StringIO()
+                    df.to_csv(csv_buffer, index=False)
+                    csv_bytes = csv_buffer.getvalue().encode("utf-8")
 
-                # Step 3: Prepare file name
-                file_name = f"{st.session_state.get('interviewee', 'JohnDoe')}_testing_report.csv"
+                    # Step 3: Prepare file name
+                    file_name = f"{st.session_state.get('interviewee', 'JohnDoe')}_testing_report.csv"
 
-                # Step 4 (Optional): Offer a download button
-                st.download_button(
-                    label="💾 Download your testing report",
-                    data=csv_bytes,
-                    file_name=file_name,
-                    mime="text/csv"
-                )
-
-                # Step 5 (Mandatory): Send via email
-                try:
-                    send_email(
-                        body=f"Please find attached the testing report generated for the participant: {st.session_state.get('interviewee', 'JohnDoe')}.",
-                        attachment_content=csv_bytes,
-                        attachment_filename=file_name
+                    # Step 4 (Optional): Offer a download button
+                    st.download_button(
+                        label="💾 Download your testing report",
+                        data=csv_bytes,
+                        file_name=file_name,
+                        mime="text/csv"
                     )
-                    st.success("✅ File successfully submitted - thank you so much for taking the time to test our projects!")
-                except Exception as e:
-                    st.error(f"⚠️ Could not send email: Please email your testing file manually. Error: {e}")
+
+                    # Step 5 (Mandatory): Send via email
+                    try:
+                        send_email(
+                            body=f"Please find attached the testing report generated for the participant: {st.session_state.get('interviewee', 'JohnDoe')}.",
+                            attachment_content=csv_bytes,
+                            attachment_filename=file_name
+                        )
+                        st.success("✅ File successfully submitted - thank you so much for taking the time to test our projects!")
+                    except Exception as e:
+                        st.error(f"⚠️ Could not send email: Please email your testing file manually. Error: {e}")
 
 with tab2:
     st.title("⚙️ Settings")
