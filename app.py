@@ -369,6 +369,8 @@ def generate_testing_report():
             st.error("TESTING REPORT COULD NOT BE GENERATED")
             st.stop()
             return "<TESTING REPORT ERROR>"
+
+        return return_text
 prompt_list = read_csv()
 if not prompt_list:
     st.error("Failed to read prompts.")
@@ -857,7 +859,7 @@ with tab2:
             text_result = generate_testing_report()
 
             # Step 2: Prepare file in memory for download
-            file_name = "generated_text.txt"
+            file_name = f"{st.session_state.get('interview_name', 'JohnDoe')}_testing_report.txt"
             file_bytes = BytesIO(text_result.encode("utf-8"))
 
             # Step 3: Show download button
