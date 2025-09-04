@@ -473,7 +473,7 @@ with tab1:
             clear_audio_keys()
 
             # Clear only relevant keys
-            for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended"]:
+            for key in ["messages", "transcript", "analysis", "view_analysis", "interview_ended", "chat_locked"]:
                 st.session_state.pop(key, None)
 
             interview_context = ""
@@ -551,7 +551,8 @@ with tab1:
                 autoplay_audio(st.session_state["last_reply_audio"])
 
     # ------------------- Chat Input -------------------
-    if st.session_state.get("messages"):
+    st.session_state.chat_locked = st.session_state.get("interview_ended", False) or st.session_state.get("safeguarding_flag", False)
+    if st.session_state.get("messages") and not st.session_state.chat_locked:
         if user_input := hybrid_chat_input("Type or speak your reply..."):
             st.session_state.messages.append({"role": "user", "content": user_input})
 
@@ -692,7 +693,9 @@ with tab1:
                 file_name=f"{name}_interview_analysis.txt",
                 mime="text/plain"
             )
-
+    else:
+        if st.session_state.get("chat_locked", False):
+            st.info("Chat is disabled - please start another session by pressing begin interview")
 with tab2:
     if 'analysis' not in st.session_state:
         st.subheader("⚠️INTERVIEW NOT FOUND!", divider = "red")
