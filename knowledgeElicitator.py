@@ -274,6 +274,7 @@ Your task:
 - For each evaluation question, write a summary answer in no more than 3 sentences.
 - Each answer must use specific details from the interviewee's responses whenever possible.
 - Do not repeat the transcript verbatim; paraphrase concisely while keeping the meaning faithful.
+- If there's no sufficient data for that question, write "N/A" in the answer field.
 
 Output format (JSON):
 
@@ -479,7 +480,12 @@ with tab1:
 
             # Likert options (e.g., 1–5)
             likert_options = ["1", "2", "3", "4", "5"]
-
+            if isinstance(evaluation_json, str):
+                try:
+                    evaluation_json = json.loads(evaluation_json)
+                except json.JSONDecodeError:
+                    st.error("⚠️ The model response wasn't valid JSON.")
+                
             for idx, item in enumerate(evaluation_json["answers"]):
                 cols = st.columns([3, 4, 2])
                 with cols[0]:
