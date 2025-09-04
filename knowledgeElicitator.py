@@ -398,6 +398,7 @@ with tab1:
         if st.button("🛑 End Interview"):
             st.session_state.interview_ended = True
 
+
     if st.session_state.interview_ended:
         # Only do transcript/CSV generation once
         if not st.session_state.get("finalised", False):
@@ -408,42 +409,48 @@ with tab1:
                 "content": f"Thank you {st.session_state['interviewee']}, that's all the questions we have for today. Thank you for taking the time to share your thoughts playing Namely. This concludes our interview."
             })
             st.success("Interview ended. Please proceed with the evaluation below .")
+
             default_eval_questions = [
-    "In a social situation, have you ever wondered or wanted to find out the meaning of somebody's name?",
-    "If yes, what triggered you to ask that question",
-    "Do you believe it's important to know the meaning of other people's names?",
-    "Does an understanding of name etymology make you a more diverse thinker and EDI aware?",
-    "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"
-]
+                "In a social situation, have you ever wondered or wanted to find out the meaning of somebody's name?",
+                "If yes, what triggered you to ask that question",
+                "Do you believe it's important to know the meaning of other people's names?",
+                "Does an understanding of name etymology make you a more diverse thinker and EDI aware?",
+                "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"
+            ]
             evaluation_questions = st.session_state.get('evaluation_questions', default_eval_questions)
+
             with st.spinner("Summarising your answers..."):
                 try:
                     response = client.chat.completions.create(
                         model="gpt-4o",
                         response_format={"type": "json_object"},
                         messages=[
-                            {"role": "system", "content": st.session_state["evaluation_prompt"] },  
-                            {"role": "user", "content": f"By following the exact framework specified above using the following transcript: {st.session_state.get('transcript', 'TRANSCRIPT UNAVAILABLE')}, and evaluation questions: {evaluation_questions}, return only the JSON file as specified, nothing else."}
-                    ]
-                )
-                    evaluation_json = response.choices[0].message.content
-                    st.session_state['evaluation_json'] = evaluation_json
+                            {"role": "system", "content": st.session_state["evaluation_prompt"]},
+                            {"role": "user", "content": (
+                                f"By following the exact framework specified above using the following transcript: "
+                                f"{st.session_state.get('transcript', 'TRANSCRIPT UNAVAILABLE')}, "
+                                f"and evaluation questions: {evaluation_questions}, "
+                                "return only the JSON file as specified, nothing else."
+                            )}
+                        ]
+                    )
+
+                    try:
+                        st.session_state['evaluation_json'] = json.loads(response.choices[0].message.content)
+                    except json.JSONDecodeError:
+                        st.error("⚠️ Model output wasn't valid JSON.")
+                        st.stop()
                     st.session_state['finalised'] = True
                 except Exception as e:
-                    st.error("Evaluation failed - please try again")
+                    st.error(f"Evaluation failed - please try again. Error: {e}")
 
             if "likert_scores" not in st.session_state:
                 st.session_state.likert_scores = {}
 
+        # From here on, use the parsed JSON object from session state
         if st.session_state.get("finalised", False):
-            # Likert options (e.g., 1–5)
-            likert_options = ["1", "2", "3", "4", "5"]
-            if isinstance(evaluation_json, str):
-                try:
-                    evaluation_json = json.loads(evaluation_json)
-                except json.JSONDecodeError:
-                    st.error("⚠️ The model response wasn't valid JSON.")
-                
+            evaluation_json = st.session_state['evaluation_json']  # parsed dict always available
+
             for idx, item in enumerate(evaluation_json["answers"]):
                 cols = st.columns([3, 4, 2])  # adjust ratios as you like
 
