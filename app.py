@@ -624,8 +624,12 @@ with tab1:
             # 7. Auto-speak interviewer replies if enabled but push to next run due to rerun
             if auto_speak:
                 st.session_state["last_reply_to_speak"] = reply
+            
+            #8.lock chat if safeguarding concern is flagged
+            if st.session_state.get("safeguarding_flag", False):
+                st.session_state.chat_locked = True
 
-            # 8. Refresh UI
+            # 9. Refresh UI
             st.rerun()
 
         if 'interview_ended' not in st.session_state:
@@ -636,6 +640,7 @@ with tab1:
             clear_audio_keys()
 
         if st.session_state.interview_ended:
+            st.session_state.chat_locked = True
             st.session_state["interview_end_time"] = datetime.now()
             interview_length = st.session_state["interview_end_time"] - st.session_state["interview_start_time"]
             total_seconds = interview_length.total_seconds()
