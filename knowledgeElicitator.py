@@ -408,6 +408,14 @@ with tab1:
                 "content": f"Thank you {st.session_state['interviewee']}, that's all the questions we have for today. Thank you for taking the time to share your thoughts playing Namely. This concludes our interview."
             })
             st.success("Interview ended. Please proceed with the evaluation below .")
+            default_eval_questions = [
+    "In a social situation, have you ever wondered or wanted to find out the meaning of somebody's name?",
+    "If yes, what triggered you to ask that question",
+    "Do you believe it's important to know the meaning of other people's names?",
+    "Does an understanding of name etymology make you a more diverse thinker and EDI aware?",
+    "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"
+]
+            evaluation_questions = st.session_state.get('evaluation_questions', default_eval_questions)
             with st.spinner("Summarising your answers..."):
                 try:
                     response = client.chat.completions.create(
@@ -415,7 +423,7 @@ with tab1:
                         response_format={"type": "json_object"},
                         messages=[
                             {"role": "system", "content": st.session_state["evaluation_prompt"] },  
-                            {"role": "user", "content": f"By following the exact framework specified above using the following transcript: {st.session_state.get('transcript', 'TRANSCRIPT UNAVAILABLE')}, and evaluation questions: {st.session_state.get('evaluation_questions', ["In a social situation, have you ever wondered or wanted to find out the meaning of somebody’s name?", "If yes, what triggered you to ask that question", "Do you believe it's important to know the meaning of other people's names?", "Does an understanding of name etymology make you a more diverse thinker and EDI aware?", "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"])}, return only the JSON file as specified, nothing else."}
+                            {"role": "user", "content": f"By following the exact framework specified above using the following transcript: {st.session_state.get('transcript', 'TRANSCRIPT UNAVAILABLE')}, and evaluation questions: {evaluation_questions}, return only the JSON file as specified, nothing else."}
                     ]
                 )
                     evaluation_json = response.choices[0].message.content
