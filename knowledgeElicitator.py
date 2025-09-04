@@ -7,6 +7,11 @@ import json
 import logging 
 import streamlit.components.v1 as components
 from html import escape
+import pandas as pd
+from io import StringIO
+import smtplib
+from email.message import EmailMessage
+
 
 # Configure logging level and format
 
@@ -18,6 +23,10 @@ logging.basicConfig(
 st.set_page_config(page_title="Knowledge Elicitator", page_icon="🧠", layout="centered")
 st.title("Knowledge Elicitation")
 
+MY_APP_PASSWORD = st.secrets.get("MY_APP_PASSWORD")
+MY_EMAIL = "alannaky6@gmail.com"
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 465
 
 #AI Model Configuration
 client = OpenAI()
@@ -29,6 +38,22 @@ def read_file(file_path):
             return f.read()
     except FileNotFoundError:
         return ""
+def send_email(body, attachment_content, attachment_filename):
+    msg = EmailMessage()
+    msg["From"] = MY_EMAIL
+    msg["To"] = "A.Naky@lboro.ac.uk"
+    msg["Subject"] = f"Testing Report for {st.session_state.get('interview_name', 'Unknown')}"
+    msg.set_content(body)
+    msg.add_attachment(
+        attachment_content,
+        maintype="text",
+        subtype="plain",
+        filename=attachment_filename
+    )
+
+    with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as smtp:
+        smtp.login(MY_EMAIL, MY_APP_PASSWORD)
+        smtp.send_message(msg)
 
 def generate_transcript(messages):
     transcript = ""
@@ -431,38 +456,87 @@ with tab1:
             st.session_state['transcript'] = transcript_text
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": f"Thank you {st.session_state['interviewee']}, that's all the questions we have for today. Thank you for taking the time to share your placement experience. This concludes our interview."
+                "content": f"Thank you {st.session_state['interviewee']}, that's all the questions we have for today. Thank you for taking the time to share your thoughts playing Namely. This concludes our interview."
             })
-            st.success("Interview ended. You can download your transcript below.")
-            st.info("Please wait until analysis has finished before downloading data...")
+            st.success("Interview ended. Please proceed with the evaluation below .")
 
-            csv_output = generate_csv(st.session_state["csv_prompt"], transcript_text)
-            if csv_output:
-                st.session_state["csv_output"] = csv_output
-                st.success("✅ CSV generated successfully!")
-            else:
-                st.error("❌ Could not generate valid CSV after 5 retries.")
+            with st.spinner("Summarising your answers..."):
+                try:
+                    response = client.chat.completions.create(
+                        model="gpt-4o",
+                        response_format={"type": "json_object"},
+                        messages=[
+                            {"role": "system", "content": st.session_state["evaluation_prompt"] },  
+                            {"role": "user", "content": "By following the exact framework specified above, return only the JSON file as specified, nothing else."}
+                    ]
+                )
+                    evaluation_json = response.choices[0].message.content
+                except Exception as e:
+                    st.error("Evaluation failed - please try again")
 
-            st.session_state["finalised"] = True
+            if "likert_scores" not in st.session_state:
+                st.session_state.likert_scores = {}
 
-            st.rerun()
+            # Likert options (e.g., 1–5)
+            likert_options = ["1", "2", "3", "4", "5"]
 
-        # After finalization, just render downloads
-        if 'transcript' in st.session_state:
-            st.download_button(
-                label="📥 Download Transcript",
-                data=st.session_state['transcript'],
-                file_name=f"{st.session_state['interviewee']}_interview_transcript.txt",
-                mime="text/plain"
-            )
+            for idx, item in enumerate(evaluation_json["answers"]):
+                cols = st.columns([3, 4, 2])
+                with cols[0]:
+                    st.markdown(f"**Q{idx+1}:** {item['question']}")
+                with cols[1]:
+                    st.markdown(f"*Summary:* {item['summary_answer']}")
+                with cols[2]:
+                    selection = st.pills(
+                        label="Rate",
+                        options=likert_options,
+                        selection_mode="single",
+                        default=st.session_state.likert_scores.get(idx),
+                        key=f"likert_pills_{idx}"
+                    )
+                    st.session_state.likert_scores[idx] = selection
 
-        if "csv_output" in st.session_state and st.session_state["csv_output"]:
-            st.download_button(
-                label="💾 Download CSV",
-                data=st.session_state["csv_output"],
-                file_name=f"{st.session_state['interviewee']}_interview.csv",
-                mime="text/csv"
-            )
+            st.markdown("---")
+            st.write("Current Likert Ratings:", st.session_state.likert_scores)
+
+            if st.button("📑 Generate and Submit your testing report"):
+                # Step 1: Build a dataframe for the CSV
+                df = pd.DataFrame([
+                    {
+                        "Question": item["question"],
+                        "Summary Answer": item["summary_answer"],
+                        "Likert Score": st.session_state.likert_scores.get(idx, "")
+                    }
+                    for idx, item in enumerate(evaluation_json["answers"])
+                ])
+
+                # Step 2: Convert to CSV in memory
+                csv_buffer = StringIO()
+                df.to_csv(csv_buffer, index=False)
+                csv_bytes = csv_buffer.getvalue().encode("utf-8")
+
+                # Step 3: Prepare file name
+                file_name = f"{st.session_state.get('interview_name', 'JohnDoe')}_testing_report.csv"
+
+                # Step 4 (Optional): Offer a download button
+                st.download_button(
+                    label="💾 Download your testing report",
+                    data=csv_bytes,
+                    file_name=file_name,
+                    mime="text/csv"
+                )
+
+                # Step 5 (Mandatory): Send via email
+                try:
+                    send_email(
+                        body=f"Please find attached the testing report generated for the participant: {st.session_state.get('interview_name', 'JohnDoe')}.",
+                        attachment_content=csv_bytes,
+                        attachment_filename=file_name
+                    )
+                    st.success("✅ File successfully submitted - thank you so much for taking the time to test our projects!")
+                except Exception as e:
+                    st.error(f"⚠️ Could not send email: Please email your testing file manually. Error: {e}")
+
 with tab2:
     st.title("⚙️ Settings")
     new_upload = st.file_uploader("Upload your JSON decision tree here:", type="json")
