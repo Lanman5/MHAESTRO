@@ -42,7 +42,7 @@ def send_email(body, attachment_content, attachment_filename):
     msg = EmailMessage()
     msg["From"] = MY_EMAIL
     msg["To"] = "A.Naky@lboro.ac.uk"
-    msg["Subject"] = f"Testing Report for {st.session_state.get('interview_name', 'Unknown')}"
+    msg["Subject"] = f"Testing Report for {st.session_state.get('interviewee', 'Unknown')}"
     msg.set_content(body)
     msg.add_attachment(
         attachment_content,
@@ -85,39 +85,6 @@ def analyze_story_stages(messages, stage_info):
     except json.JSONDecodeError as e:
         logging.warning(f"JSON decoding failed: {e}")
         return {} 
-
-def generate_csv(prompt, transcript):
-    for attempt in range(5):
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": f"""By following the exact framework specified above, return only the CSV file contents, nothing else.
-                 Interview questions (ordered):  
-                    {st.session_state.stage_path}  
-                Transcript:  
-                {transcript} """}])
-
-        csv_text = response.choices[0].message.content.strip()
-        csv_text = re.sub(r"^```(?:csv)?\s*|\s*```$", "", csv_text, flags=re.MULTILINE).strip()
-
-        # Try parsing with csv reader
-        try:
-            reader = csv.reader(io.StringIO(csv_text))
-            rows = list(reader)
-
-            # Validate: at least 2 rows (header + 1 row) and 2+ columns
-            if len(rows) < 2:
-                raise ValueError("CSV contained no data rows")
-            if len(rows[0]) < 2:
-                raise ValueError("CSV did not contain at least 2 columns")
-
-            return csv_text
-
-        except Exception as e:
-            logging.warning(f"Attempt {attempt+1}/5: Invalid CSV, regenerating... ({e})")
-
-    return None
 
 #tree navigation functions
 def calculate_max_depth(node):
@@ -247,20 +214,6 @@ Your goal is to follow the interview framework to be able to elicit enough infor
     Return ONLY a JSON object like:
     {{"next_key": "<selected_child_key>", "reason": "<short reason dictating why you have chosen this path.>"}}. """,
 
-        "csv_prompt": """You are an expert transcript analyst.  
-Your task is to convert an interview transcript into a structured **CSV file**.  
-
-### Rules:
-1. Output **ONLY raw CSV text** (no explanations, no markdown, no code blocks).  
-2. The CSV must have **exactly these headers**:  
-   `question,answer`  
-3. For each interview stage in the question set extract the matching information from the transcript.  
-   - Column `question` = the interview question text.  
-   - Column `answer`   = the interviewee’s response, based only on the interviewee's response in the transcript.  
-4. If a question was not answered or not covered in the transcript, write `N/A` in the `answer` field.  
-5. Do **not invent, summarise, or expand** beyond what is in the transcript.  
-6. Ensure the CSV is valid and parsable — one row per question.  
-7. Use plain text commas as delimiters. Escape any quotes or commas inside fields properly.""",
 
         "evaluation_prompt": f"""You are an expert qualitative analyst. You will receive:
 
@@ -291,11 +244,6 @@ Output format (JSON):
     // ... one object per question
   ]
 }}
-Interview transcript:
-{st.session_state.get('transcript', '')}
-
-Evaluation questions:
-{st.session_state.get('evaluation_questions', ["In a social situation, have you ever wondered or wanted to find out the meaning of somebody’s name?", "If yes, what triggered you to ask that question", "Do you believe it's important to know the meaning of other people's names?", "Does an understanding of name etymology make you a more diverse thinker and EDI aware?", "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"])}
 """,
         "config_initialized": True,
         "evaluation_questions": ["In a social situation, have you ever wondered or wanted to find out the meaning of somebody’s name?", "If yes, what triggered you to ask that question", "Do you believe it's important to know the meaning of other people's names?", "Does an understanding of name etymology make you a more diverse thinker and EDI aware?", "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"]
@@ -460,7 +408,6 @@ with tab1:
                 "content": f"Thank you {st.session_state['interviewee']}, that's all the questions we have for today. Thank you for taking the time to share your thoughts playing Namely. This concludes our interview."
             })
             st.success("Interview ended. Please proceed with the evaluation below .")
-
             with st.spinner("Summarising your answers..."):
                 try:
                     response = client.chat.completions.create(
@@ -468,16 +415,19 @@ with tab1:
                         response_format={"type": "json_object"},
                         messages=[
                             {"role": "system", "content": st.session_state["evaluation_prompt"] },  
-                            {"role": "user", "content": "By following the exact framework specified above, return only the JSON file as specified, nothing else."}
+                            {"role": "user", "content": f"By following the exact framework specified above using the following transcript: {st.session_state.get('transcript', 'TRANSCRIPT UNAVAILABLE')}, and evaluation questions: {st.session_state.get('evaluation_questions', ["In a social situation, have you ever wondered or wanted to find out the meaning of somebody’s name?", "If yes, what triggered you to ask that question", "Do you believe it's important to know the meaning of other people's names?", "Does an understanding of name etymology make you a more diverse thinker and EDI aware?", "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"])}, return only the JSON file as specified, nothing else."}
                     ]
                 )
                     evaluation_json = response.choices[0].message.content
+                    st.session_state['evaluation_json'] = evaluation_json
+                    st.session_state['finalised'] = True
                 except Exception as e:
                     st.error("Evaluation failed - please try again")
 
             if "likert_scores" not in st.session_state:
                 st.session_state.likert_scores = {}
 
+        if st.session_state.get("finalised", False):
             # Likert options (e.g., 1–5)
             likert_options = ["1", "2", "3", "4", "5"]
             if isinstance(evaluation_json, str):
@@ -487,23 +437,22 @@ with tab1:
                     st.error("⚠️ The model response wasn't valid JSON.")
                 
             for idx, item in enumerate(evaluation_json["answers"]):
-                cols = st.columns([3, 4, 2])
+                cols = st.columns([3, 4, 2])  # adjust ratios as you like
+
                 with cols[0]:
                     st.markdown(f"**Q{idx+1}:** {item['question']}")
                 with cols[1]:
                     st.markdown(f"*Summary:* {item['summary_answer']}")
                 with cols[2]:
-                    selection = st.pills(
-                        label="Rate",
-                        options=likert_options,
-                        selection_mode="single",
-                        default=st.session_state.likert_scores.get(idx),
-                        key=f"likert_pills_{idx}"
+                    score = st.slider(
+                        label=f"Score for Q{idx+1}",
+                        min_value=1,
+                        max_value=5,
+                        value=3,
+                        step=1,
+                        key=f"likert_{idx}"
                     )
-                    st.session_state.likert_scores[idx] = selection
-
-            st.markdown("---")
-            st.write("Current Likert Ratings:", st.session_state.likert_scores)
+                    st.session_state.likert_scores[idx] = score
 
             if st.button("📑 Generate and Submit your testing report"):
                 # Step 1: Build a dataframe for the CSV
@@ -522,7 +471,7 @@ with tab1:
                 csv_bytes = csv_buffer.getvalue().encode("utf-8")
 
                 # Step 3: Prepare file name
-                file_name = f"{st.session_state.get('interview_name', 'JohnDoe')}_testing_report.csv"
+                file_name = f"{st.session_state.get('interviewee', 'JohnDoe')}_testing_report.csv"
 
                 # Step 4 (Optional): Offer a download button
                 st.download_button(
@@ -535,7 +484,7 @@ with tab1:
                 # Step 5 (Mandatory): Send via email
                 try:
                     send_email(
-                        body=f"Please find attached the testing report generated for the participant: {st.session_state.get('interview_name', 'JohnDoe')}.",
+                        body=f"Please find attached the testing report generated for the participant: {st.session_state.get('interviewee', 'JohnDoe')}.",
                         attachment_content=csv_bytes,
                         attachment_filename=file_name
                     )
@@ -552,7 +501,7 @@ with tab2:
     st.text_area("Interviewer Prompt:", key="interview_prompt", height=350)
     st.text_area("Steering Prompt:", key="steering_prompt", height=150)
     st.text_area("Decision Tree Prompt:", key="choice_prompt", height=350)
-    st.text_area("CSV Generation Prompt:", key="csv_prompt", height=250)
+    st.text_area("Evaluation Prompt:", key="evaluation_prompt", height=250)
 
     with st.expander("Edit Evaluation Questions"):
         updated = []
