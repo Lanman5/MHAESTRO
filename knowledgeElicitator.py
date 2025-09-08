@@ -12,7 +12,22 @@ from io import StringIO
 import smtplib
 from email.message import EmailMessage
 
+AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
+def check_password():
+    """Simple password protection."""
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
 
+    if not st.session_state["authenticated"]:
+        password = st.text_input("Enter the app password:", type="password")
+        if password in AUTHORIZED_PASSWORDS:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.warning("Incorrect password")
+            st.stop()
+
+check_password()
 # Configure logging level and format
 
 logging.basicConfig(
@@ -24,6 +39,7 @@ st.set_page_config(page_title="Knowledge Elicitator", page_icon="🧠", layout="
 st.title("Knowledge Elicitation")
 
 MY_APP_PASSWORD = st.secrets.get("MY_APP_PASSWORD")
+MY_APP_PASSWORD = "test"
 MY_EMAIL = "alannaky6@gmail.com"
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465
@@ -38,6 +54,7 @@ def read_file(file_path):
             return f.read()
     except FileNotFoundError:
         return ""
+    
 def send_email(body, attachment_content, attachment_filename):
     msg = EmailMessage()
     msg["From"] = MY_EMAIL
@@ -95,72 +112,210 @@ def calculate_max_depth(node):
         max_child_depth = max(max_child_depth, calculate_max_depth(child))
     return 1 + max_child_depth
 
-def path_to_questions(decision_tree, path):
-    questions = []
-    for node_id in path:
-        node = get_next_stage(decision_tree, [node_id])
-        if node and "question" in node:
-            questions.append(node["question"])
-    return questions
+# Helper: robust recursive search for a node by its id anywhere in the tree
+def find_node_by_id(node, target_id):
+    if not isinstance(node, dict):
+        return None
+    if node.get("id") == target_id:
+        return node
+    children = node.get("children") or {}
+    # children might be a dict of {key: node} or a list of nodes
+    if isinstance(children, dict):
+        iterator = children.values()
+    else:
+        iterator = children
+    for child in iterator:
+        found = find_node_by_id(child, target_id)
+        if found:
+            return found
+    return None
 
 def get_next_stage(decision_tree, path):
     """
-    Traverse tree by a list of node IDs, return the corresponding node dict.
+    Traverse the tree by a path of node IDs.
+    Path should normally start with the root id.
+    Returns the node dict for the last id in path or {} if not found.
     """
-    def find_by_id(node, target_id):
+    logging.debug(">>> get_next_stage called with path: %s", path)
+
+    def find_node_by_id(node, target_id):
+        if not isinstance(node, dict):
+            return None
         if node.get("id") == target_id:
             return node
-        for child in node.get("children", {}).values():
-            found = find_by_id(child, target_id)
-            if found:
-                return found
+        children = node.get("children") or {}
+        if isinstance(children, dict):
+            for child in children.values():
+                found = find_node_by_id(child, target_id)
+                if found:
+                    return found
+        else:
+            for child in children:
+                found = find_node_by_id(child, target_id)
+                if found:
+                    return found
         return None
 
+    if not path:
+        logging.debug("Empty path provided")
+        return {}
+
+    root_id = decision_tree.get("id")
+    if path[0] != root_id:
+        logging.debug("Path does not start with root, searching globally")
+        found = find_node_by_id(decision_tree, path[-1]) or {}
+        logging.debug("Found node (global search): %s", found)
+        return found
+
     node = decision_tree
-    for node_id in path[1:]:  # skip root (already node)
-        node = find_by_id(decision_tree, node_id) or {}
-    return node if isinstance(node, dict) else {}
+    for node_id in path[1:]:
+        children = node.get("children") or {}
+        if isinstance(children, dict):
+            node = next((c for c in children.values() if c.get("id") == node_id), None)
+        else:
+            node = next((c for c in children if c.get("id") == node_id), None)
+        if not node:
+            logging.warning("Node id %s not found under current node, doing global search", node_id)
+            node = find_node_by_id(decision_tree, node_id)
+            if not node:
+                logging.error("Node id %s not found in entire tree", node_id)
+                return {}
+    logging.debug("get_next_stage returning node: %s", node)
+    return node
+
+
+def path_to_questions(decision_tree, path):
+    """
+    Given a path of node IDs (root first), return the list of question strings
+    for each node along that path.
+    """
+    logging.debug(">>> path_to_questions called with path: %s", path)
+    questions = []
+    for i in range(len(path)):
+        subpath = path[: i + 1]
+        node = get_next_stage(decision_tree, subpath)
+        logging.debug("node at subpath %s: %s", subpath, node)
+        if node and "question" in node:
+            questions.append(node["question"])
+            logging.debug("questions so far: %s", questions)
+    return questions
+
 
 def move_to_next_stage(decision_tree, stage_path):
-    transcript = generate_transcript(st.session_state.messages) 
-    current_node = get_next_stage(decision_tree, stage_path)
-    children = current_node.get("children", {})
-    options_text = "\n".join([f"- {k}: {v['question']}" for k, v in children.items()])
+    """
+    Progress the interview to the next stage based on the current node and GPT's choice (if needed).
 
-    # Case 1: No children (leaf node)
-    if not children:
+    Args:
+        decision_tree (dict): The full decision tree.
+        stage_path (list[str]): The list of node IDs visited so far (root first).
+
+    Returns:
+        (next_node: dict, new_stage_path: list[str])
+    """
+    logging.debug(">>> move_to_next_stage called")
+    logging.debug("decision_tree root id: %s", decision_tree.get("id"))
+    logging.debug("initial stage_path: %s", stage_path)
+
+    # Generate transcript of the interview so far
+    transcript = generate_transcript(st.session_state.messages)
+    logging.debug("transcript:\n%s", transcript)
+
+    # Get the current node
+    current_node = get_next_stage(decision_tree, stage_path)
+    logging.debug("current_node: %s", current_node)
+
+    children = current_node.get("children") or {}
+    logging.debug("children raw: %s", children)
+
+    # Handle both dict and list structures for children
+    if isinstance(children, list):
+        children_dict = {str(i): child for i, child in enumerate(children)}
+    else:
+        children_dict = children
+    logging.debug("children_dict (normalized): %s", children_dict)
+
+    # ----- Case 1: No children (leaf node) -----
+    if not children_dict:
+        logging.debug("Leaf node reached, no children — returning current_node")
         return current_node, stage_path
 
-    #Case 2: 1 Child, just pick child
-    if len(children) == 1:
-        next_node = list(children.values())[0]
-        stage_path.append(next_node["id"])
+    # ----- Case 2: Only one child → auto-progress -----
+    if len(children_dict) == 1:
+        next_node = list(children_dict.values())[0]
+        logging.debug("Only one child found: %s", next_node)
+        if next_node and "id" in next_node:
+            stage_path.append(next_node["id"])
+            logging.debug("stage_path updated (auto-progress): %s", stage_path)
         return next_node, stage_path
 
-    # Case 3: If multiple children, GPT picks key
-    formatted_choice_prompt = st.session_state["choice_prompt"].format(tree_path=path_to_questions(st.session_state["decision_tree"], st.session_state["stage_path"]), transcript=transcript, options_text=options_text)
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": formatted_choice_prompt},
-        ]
+    # ----- Case 3: Multiple children → ask GPT to choose -----
+    options_text = "\n".join([
+        f"- key: {key} | id: {child.get('id')} | question: {child.get('question', 'N/A')}"
+        for key, child in children_dict.items()
+    ])
+    logging.debug("options_text built:\n%s", options_text)
+
+    formatted_choice_prompt = st.session_state["choice_prompt"].format(
+        tree_path=path_to_questions(st.session_state["decision_tree"], st.session_state["stage_path"]),
+        transcript=transcript,
+        options_text=options_text
     )
+    logging.debug("formatted_choice_prompt:\n%s", formatted_choice_prompt)
 
-    result = response.choices[0].message.content
-    logging.debug("Tree path decision result: %s", result)
     try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": formatted_choice_prompt},
+                {"role": "user", "content": transcript}
+            ]
+        )
+
+        result = response.choices[0].message.content
+        logging.debug("GPT raw response:\n%s", result)
+
         parsed = json.loads(result)
+        logging.debug("parsed GPT response: %s", parsed)
+
         next_key = parsed.get("next_key")
-        next_node = children.get(next_key, list(children.values())[0])
-        stage_path.append(next_node["id"])
+        logging.debug("next_key chosen: %s", next_key)
+
+        next_node = children_dict.get(next_key)
+        logging.debug("next_node via key: %s", next_node)
+
+        if not next_node:
+            next_id = parsed.get("next_id")
+            logging.debug("next_node not found by key, trying next_id: %s", next_id)
+            if next_id:
+                for child in children_dict.values():
+                    if child.get("id") == next_id:
+                        next_node = child
+                        logging.debug("next_node found via id match: %s", next_node)
+                        break
+
+        if not next_node:
+            logging.warning("GPT choice not valid; falling back to first child")
+            next_node = list(children_dict.values())[0]
+            logging.debug("fallback next_node: %s", next_node)
+
+        if next_node and "id" in next_node:
+            stage_path.append(next_node["id"])
+            logging.debug("stage_path updated (GPT choice): %s", stage_path)
+        else:
+            logging.error("Selected next_node has no 'id'; cannot safely update stage_path")
+
         return next_node, stage_path
-    except Exception:
-        # fallback to first child if GPT fails
-        first_child = list(children.values())[0]
-        next_node = first_child
-        stage_path.append(next_node["id"])
+
+    except Exception as e:
+        logging.error("Error choosing next stage via GPT: %s", e)
+        next_node = list(children_dict.values())[0]
+        logging.debug("fallback next_node (exception): %s", next_node)
+        if next_node and "id" in next_node:
+            stage_path.append(next_node["id"])
+            logging.debug("stage_path updated (exception fallback): %s", stage_path)
         return next_node, stage_path
+
 
 #default configuration
 if "config_initialized" not in st.session_state:
@@ -314,6 +469,9 @@ with tab1:
         st.progress(progress_percentage)
 
 
+        # st.write(f"Decision Tree: {st.session_state.get('decision_tree', {})}")
+        # st.write(f"Current Node: {st.session_state.get('current_node', {})}")
+        # st.write(f"Stage Path: {st.session_state.get('stage_path', [])}")
         inner = ""
         for msg in st.session_state.messages[1:]:
             if msg["role"] == "system":
