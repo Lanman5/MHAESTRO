@@ -13,6 +13,7 @@ import smtplib
 from email.message import EmailMessage
 
 AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
+
 def check_password():
     """Simple password protection."""
     if "authenticated" not in st.session_state:
