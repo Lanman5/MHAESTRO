@@ -636,17 +636,22 @@ with tab1:
                     st.session_state.likert_scores[idx] = score
 
             st.markdown("### 💻 User Interface Feedback")
-
             if "ui_likert_scores" not in st.session_state:
                 st.session_state.ui_likert_scores = {}
 
+            # Define Likert labels if you want text on the pills
+            likert_labels = ["1 - Strongly Disagree", "2 - Disagree", "3 - Neutral", "4 - Agree", "5 - Strongly Agree"]
+
             for i, q in enumerate(st.session_state.ui_questions):
-                score = st.slider(
-                    label=q,
-                    min_value=1, max_value=5, value=3, step=1,
-                    key=f"ui_likert_{i}"
-            )
-            st.session_state.ui_likert_scores[i] = score
+                st.markdown(f"**Q{i+1}:** {q}")
+                score = st.pills(
+                    label="",  # no label, we already show the question
+                    options=[1, 2, 3, 4, 5],
+                    format_func=lambda x: likert_labels[x-1],  # optional pretty labels
+                    default=3  # default selection (3 = Neutral)
+                )
+                st.session_state.ui_likert_scores[i] = score
+
 
             if st.button("📑 Generate and Submit your testing report"):
                 with st.spinner("Submitting your results - please do not leave this page"):
