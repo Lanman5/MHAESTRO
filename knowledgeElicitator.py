@@ -639,7 +639,6 @@ with tab1:
             if "ui_likert_scores" not in st.session_state:
                 st.session_state.ui_likert_scores = {}
 
-            # Define Likert labels if you want text on the pills
             likert_labels = ["1 - Strongly Disagree", "2 - Disagree", "3 - Neutral", "4 - Agree", "5 - Strongly Agree"]
 
             for i, q in enumerate(st.session_state.ui_questions):
@@ -648,7 +647,8 @@ with tab1:
                     label="",  # no label, we already show the question
                     options=[1, 2, 3, 4, 5],
                     format_func=lambda x: likert_labels[x-1],  # optional pretty labels
-                    default=3  # default selection (3 = Neutral)
+                    default=3,  # default selection (3 = Neutral)
+                    key=f"ui_pill_{i}"  # <-- UNIQUE key per question
                 )
                 st.session_state.ui_likert_scores[i] = score
 
