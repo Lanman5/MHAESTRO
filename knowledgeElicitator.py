@@ -40,7 +40,6 @@ st.set_page_config(page_title="Knowledge Elicitator", page_icon="🧠", layout="
 st.title("Knowledge Elicitation")
 
 MY_APP_PASSWORD = st.secrets.get("MY_APP_PASSWORD")
-MY_APP_PASSWORD = "test"
 MY_EMAIL = "alannaky6@gmail.com"
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465
