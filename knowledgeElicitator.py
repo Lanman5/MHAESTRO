@@ -402,7 +402,14 @@ Output format (JSON):
 }}
 """,
         "config_initialized": True,
-        "evaluation_questions": ["In a social situation, have you ever wondered or wanted to find out the meaning of somebody’s name?", "If yes, what triggered you to ask that question", "Do you believe it's important to know the meaning of other people's names?", "Does an understanding of name etymology make you a more diverse thinker and EDI aware?", "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"]
+        "evaluation_questions": ["In a social situation, have you ever wondered or wanted to find out the meaning of somebody’s name?", "If yes, what triggered you to ask that question", "Do you believe it's important to know the meaning of other people's names?", "Does an understanding of name etymology make you a more diverse thinker and EDI aware?", "Does name etymology knowledge increase your curiosity about different cultures and does this knowledge empower you within a social circle?"],
+                "ui_questions": [
+    "Was the program easy to use?",
+    "Is the interface visually appealing?",
+    "Were the questions coherent?",
+    "Were the questions repetitive or intrusive at any point?",
+    "Do you think this tool is just as effective as a human led interview?"
+            ]
     })
 
 #MAIN PROGRAM
@@ -628,27 +635,49 @@ with tab1:
                     )
                     st.session_state.likert_scores[idx] = score
 
+            st.markdown("### 💻 User Interface Feedback")
+
+            if "ui_likert_scores" not in st.session_state:
+                st.session_state.ui_likert_scores = {}
+
+            for i, q in enumerate(st.session_state.ui_questions):
+                score = st.slider(
+                    label=q,
+                    min_value=1, max_value=5, value=3, step=1,
+                    key=f"ui_likert_{i}"
+            )
+            st.session_state.ui_likert_scores[i] = score
+
             if st.button("📑 Generate and Submit your testing report"):
                 with st.spinner("Submitting your results - please do not leave this page"):
-                    # Step 1: Build a dataframe for the CSV
-                    df = pd.DataFrame([
-                        {
+                    rows = []
+                    
+                    # Add evaluation answers
+                    for idx, item in enumerate(evaluation_json["answers"]):
+                        rows.append({
+                            "Category": "Interview Evaluation",
                             "Question": item["question"],
                             "Summary Answer": item["summary_answer"],
                             "Likert Score": st.session_state.likert_scores.get(idx, "")
-                        }
-                        for idx, item in enumerate(evaluation_json["answers"])
-                    ])
+                        })
 
-                    # Step 2: Convert to CSV in memory
+                    # Add UI feedback
+                    for idx, q in enumerate(st.session_state.ui_questions):
+                        rows.append({
+                            "Category": "UI Feedback",
+                            "Question": q,
+                            "Summary Answer": "",
+                            "Likert Score": st.session_state.ui_likert_scores.get(idx, "")
+                        })
+
+                    df = pd.DataFrame(rows)
+
                     csv_buffer = StringIO()
                     df.to_csv(csv_buffer, index=False)
                     csv_bytes = csv_buffer.getvalue().encode("utf-8")
 
-                    # Step 3: Prepare file name
                     file_name = f"{st.session_state.get('interviewee', 'JohnDoe')}_testing_report.csv"
 
-                    # Step 4 (Optional): Offer a download button
                     st.download_button(
                         label="💾 Download your testing report",
                         data=csv_bytes,
@@ -656,7 +685,6 @@ with tab1:
                         mime="text/csv"
                     )
 
-                    # Step 5 (Mandatory): Send via email
                     try:
                         send_email(
                             body=f"Please find attached the testing report generated for the participant: {st.session_state.get('interviewee', 'JohnDoe')}.",
@@ -666,6 +694,8 @@ with tab1:
                         st.success("✅ File successfully submitted - thank you so much for taking the time to test our projects!")
                     except Exception as e:
                         st.error(f"⚠️ Could not send email: Please email your testing file manually. Error: {e}")
+
+
 
 with tab2:
     st.title("⚙️ Settings")
@@ -692,6 +722,24 @@ with tab2:
 
         if updated != st.session_state.evaluation_questions:
             st.session_state.evaluation_questions = updated
-            st.rerun()  # use st.rerun instead of experimental_rerun
+            st.rerun() 
 
         st.write("Current Questions in Session State:", st.session_state.evaluation_questions)
+
+    
+    with st.expander("Edit UI Questions"):
+        updated_ui = []
+        for i, q in enumerate(st.session_state.ui_questions):
+            cols = st.columns([8, 2])
+            new_q = cols[0].text_input(f"UI Question {i+1}", value=q, key=f"ui_q_{i}")
+            if not cols[1].button("Remove", key=f"remove_ui_{i}"):
+                updated_ui.append(new_q)
+
+        if st.button("Add New UI Question"):
+            updated_ui.append("New UI question text here...")
+
+        if updated_ui != st.session_state.ui_questions:
+            st.session_state.ui_questions = updated_ui
+            st.rerun()
+
+        st.write("Current UI Questions in Session State:", st.session_state.ui_questions)
