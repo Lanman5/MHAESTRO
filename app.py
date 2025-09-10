@@ -41,7 +41,7 @@ def check_password():
             st.warning("Incorrect password")
             st.stop()
 
-check_password()
+#check_password() APP IS NOW UNLOCKED
 
 st.set_page_config(page_title="Spirit Engine 2.0", page_icon="🧠", layout="centered")
 
