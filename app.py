@@ -457,7 +457,7 @@ if "config_initialized" not in st.session_state:
         "config_initialized": True,
 
         #tts config
-        "TTS_model": "eleven_multilingual_v2",#set a default
+        "TTS_model": "eleven_v3",#set a default
         "interviewer_voiceid":  list(voice_options.values())[0],
 
         "framework_prompt": """You are a strict story quality evaluator for children’s stories (ages 2–5). 
@@ -608,7 +608,7 @@ with tab1:
             reply_text = st.session_state.pop("last_reply_to_speak")
 
             # Generate audio
-            play_sound(reply_text, "last_reply", list(voice_options.values())[0])
+            play_sound(reply_text, "last_reply", st.session_state.get("interviewer_voiceid", list(voice_options.values())[0]))
 
             # Only autoplay if audio was successfully created
             if "last_reply_audio" in st.session_state:
