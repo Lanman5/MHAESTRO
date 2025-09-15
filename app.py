@@ -15,12 +15,13 @@ import hashlib
 import smtplib
 from email.message import EmailMessage
 
-
+#configures the logging feature 
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
 )
 
+#Some variables from streamlit secrets
 AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
 MY_APP_PASSWORD = st.secrets.get("MY_APP_PASSWORD")
 MY_EMAIL = "alannaky6@gmail.com"
@@ -41,14 +42,13 @@ def check_password():
             st.warning("Incorrect password")
             st.stop()
 
-#check_password() APP IS NOW UNLOCKED
+#check_password() #APP IS NOW UNLOCKED -> Remove ONLY the first # to lock it again
 
 st.set_page_config(page_title="Spirit Engine 2.0", page_icon="🧠", layout="centered")
 
 st.title("🎙️Interviewer and Storyteller📖")
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 
 # Fetch all available voices dynamically
 voice_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
@@ -386,6 +386,7 @@ def generate_testing_report():
             return "<TESTING REPORT ERROR>"
 
         return return_text
+# Main app logic
 prompt_list = read_csv()
 if not prompt_list:
     st.error("Failed to read prompts.")
@@ -394,12 +395,12 @@ if not prompt_list:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "config_initialized" not in st.session_state:
-    if prompt_list and len(prompt_list) < 17:
+    if prompt_list and len(prompt_list) < 17: #when adding more default items, change this number accordingly 
 
         st.error("Insufficient prompts in Default CSV configuration. Please ensure at least 17 entries.")
         st.stop()
 
-    #DEFAULT FILES
+    #DEFAULT FILES -> WHEN ADDING MORE PRE-REQ FILES, ADD THEM HERE. 
     init_file_data = []
     init_file_data.append({"title": prompt_list[10][0], "content": read_file(prompt_list[10][1])})
     init_file_data.append({"title": prompt_list[11][0], "content": read_file(prompt_list[11][1])})
@@ -408,6 +409,8 @@ if "config_initialized" not in st.session_state:
     init_file_data.append({"title": prompt_list[16][0], "content": read_file(prompt_list[16][1])})
 
     st.session_state.update({
+
+        #Format here is "title the program will access information from": location in CSV file 
         #files 
         "titled_prereq_files": init_file_data,
         # Interviewer
@@ -460,6 +463,7 @@ if "config_initialized" not in st.session_state:
         "TTS_model": "eleven_v3",#set a default
         "interviewer_voiceid":  list(voice_options.values())[0],
 
+# story quality framework prompt 
         "framework_prompt": """You are a strict story quality evaluator for children’s stories (ages 2–5). 
 Your task is to evaluate a story against the following framework and return ONLY valid JSON.
 
@@ -835,7 +839,7 @@ with tab2:
                     st.session_state['generate_child_story'] = True
 
 
-                #FOR WHEN WE HAVE AN ADULT STORY FRAMEWORK
+                #FOR WHEN WE HAVE AN ADULT STORY FRAMEWORK THIS WILL DO THE WHOLE REGEN 3 TIMES THING
                 # if st.session_state.get('generate_adult_story'):
                 #     with st.spinner("Writing your story..."):
                 #         adult_story_context = ""
