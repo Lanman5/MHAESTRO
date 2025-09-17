@@ -38,7 +38,7 @@ logging.basicConfig(
 
 st.set_page_config(page_title="Knowledge Elicitator", page_icon="🧠", layout="centered")
 st.title("Knowledge Elicitation")
-if not st.session_state.get("interview_in_progress", False) and not st.session_state.get("interview_ended", False):
+if not st.session_state.get("interview_in_progress", False) or not st.session_state.get("interview_ended", False):
     st.text("""Thank you for taking the time to test our programs - your feedback is invaluable in helping us improve our tools.
 
 This is an interviewer tool still in development and we are seeing if AI can be used to carry out structured interviews to extract knowledge from users in a perceptive level of a detail without an expert being required to carry out the interview.
