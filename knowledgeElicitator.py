@@ -28,7 +28,7 @@ def check_password():
             st.warning("Incorrect password")
             st.stop()
 
-check_password()
+#check_password()
 # Configure logging level and format
 
 logging.basicConfig(
