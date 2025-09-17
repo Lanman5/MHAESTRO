@@ -38,10 +38,13 @@ logging.basicConfig(
 
 st.set_page_config(page_title="Knowledge Elicitator", page_icon="🧠", layout="centered")
 st.title("Knowledge Elicitation")
-if not st.session_state.get("interview_in_progress", False) and not st.session_state.get("interview_ended", False):
+
+with st.expander("ℹ️ View Instructions", expanded=False):
     st.text("""Thank you for taking the time to test our programs - your feedback is invaluable in helping us improve our tools.
 
 This is an interviewer tool still in development and we are seeing if AI can be used to carry out structured interviews to extract knowledge from users in a perceptive level of a detail without an expert being required to carry out the interview.
+
+Please don't use your real name, only the participant number you have been assigned for this testing session. OpenAI will keep all transcripts for 20 days. 
 
 You will be asked questions based on the card game you've just played to see your thoughts on the importance of name etymology and how this may have changed since you've played the game.
 
