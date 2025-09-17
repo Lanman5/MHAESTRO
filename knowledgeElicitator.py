@@ -349,7 +349,7 @@ Your goal is to follow the interview framework to be able to elicit enough infor
         #assistant bots
         "steering_prompt": """You are an analysis expert evaluating interview answers given in the transcript so far.
     The interviewer is currently at the stage in the interview decision tree: {stage}.
-    Determine if the interviewee's last response sufficiently answers this stage with a perceptive level of detail in order to be able to move on in the interview.
+    Determine if the interviewee's last response sufficiently answers this stage with a enough detail in order to be able to move on in the interview.
     Return ONLY JSON strictly in this format:
     {{"adequate": true/false, "reason": "short explanation that will tell the interviewer how to probe further to collect adequate information."}}
 
