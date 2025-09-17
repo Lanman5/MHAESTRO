@@ -615,6 +615,8 @@ with tab1:
         # From here on, use the parsed JSON object from session state
         if st.session_state.get("finalised", False):
             evaluation_json = st.session_state['evaluation_json']  # parsed dict always available
+            st.subheader("Interviewer Evaluation Summary")
+            st.text("The interviewer has summarised your answers to map to each of the five evaluation questions below. Please review each summary and provide a score (1 [strongly disagree] - 5 [strongly agree]) for each answer based on how well you feel the summary reflects your original answer.")
 
             for idx, item in enumerate(evaluation_json["answers"]):
                 cols = st.columns([3, 4, 2])  # adjust ratios as you like
