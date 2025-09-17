@@ -41,14 +41,14 @@ st.title("Knowledge Elicitation")
 if not st.session_state.get("interview_in_progress", False) and not st.session_state.get("interview_ended", False):
     st.text("""Thank you for taking the time to test our programs - your feedback is invaluable in helping us improve our tools.
         
-        This is an interviewer tool still in development and we are seeing if AI can be used to carry out structuered interviews to extrat knowledge from users in a perceptive level of a detail without an expert being required to carry out the interview.
+    This is an interviewer tool still in development and we are seeing if AI can be used to carry out structuered interviews to extrat knowledge from users in a perceptive level of a detail without an expert being required to carry out the interview.
         
-        You will be asked questions based on the card game you've just played to see your thoughts on the importance of name etymology and how this may have changed since you've played the game.
+    You will be asked questions based on the card game you've just played to see your thoughts on the importance of name etymology and how this may have changed since you've played the game.
 
-        This tool is still in its early stages so we'd love to hear your feedback on how to improve it. 
-        If you find yourself struggling to answer any questions you can ask the interviewer to rephrase  or move on.
+    This tool is still in its early stages so we'd love to hear your feedback on how to improve it. 
+    If you find yourself struggling to answer any questions you can ask the interviewer to rephrase  or move on.
 
-        At the end, the interviewer will use your answers to summarise your thoughts on the five extraction criteria and you will be asked to rate how well you feel the summary reflects your original answers.""")
+    At the end, the interviewer will use your answers to summarise your thoughts on the five extraction criteria and you will be asked to rate how well you feel the summary reflects your original answers.""")
 
 MY_APP_PASSWORD = st.secrets.get("MY_APP_PASSWORD")
 MY_EMAIL = "alannaky6@gmail.com"
