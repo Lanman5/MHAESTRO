@@ -51,7 +51,7 @@ You will be asked questions based on the card game you've just played to see you
 This tool is still in its early stages so we'd love to hear your feedback on how to improve it. 
 If you find yourself struggling to answer any questions you can ask the interviewer to rephrase or move on.
 
-At the end, the interviewer will use your answers to summarise your thoughts on the five extraction criteria and you will be asked to rate how well you feel the summary reflects your original answers.""")
+At the end, the interviewer will use your answers to summarise your thoughts on the five evaluation criteria and you will be asked to rate how well you feel the summary reflects your original answers.""")
 
 MY_APP_PASSWORD = st.secrets.get("MY_APP_PASSWORD")
 MY_EMAIL = "alannaky6@gmail.com"
