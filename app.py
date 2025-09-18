@@ -958,7 +958,7 @@ with tab2:
             )
         
         #COMMENT OUT IF YOU DON'T WANT
-        if st.button("📑Generate your testing report"):
+        if st.button("📊Generate your testing report"):
             # Step 1: Generate text
             text_result = generate_testing_report()
 
