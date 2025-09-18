@@ -943,6 +943,20 @@ with tab2:
 
     #test report
     if 'narrative' in st.session_state:
+        st.download_button(
+                label="📑 Download Narrative",
+                data=st.session_state['narrative'],
+                file_name=f"{name}_interview_narrative.txt",
+                mime="text/plain"
+            )
+        if "child_story" in st.session_state:
+            st.download_button(
+                label="📙 Download Children's Story",
+                data=st.session_state['child_story'],
+                file_name=f"{name}_interview_child_story.txt",
+                mime="text/plain"
+            )
+        
         if st.button("📑Generate and Download your testing report"):
             # Step 1: Generate text
             text_result = generate_testing_report()
@@ -958,8 +972,7 @@ with tab2:
                 file_name=file_name,
                 mime="text/plain"
             )
-
-
+    
 with tab3:
     st.title("Settings")    
     st.subheader("Pre-Requisite Files")
