@@ -12,8 +12,6 @@ from elevenlabs.client import ElevenLabs
 from elevenlabs import VoiceSettings
 from datetime import datetime
 import hashlib
-import smtplib
-from email.message import EmailMessage
 
 #configures the logging feature 
 logging.basicConfig(
@@ -23,10 +21,6 @@ logging.basicConfig(
 
 #Some variables from streamlit secrets
 AUTHORIZED_PASSWORDS = st.secrets.get("AUTHORIZED_PASSWORDS")
-MY_APP_PASSWORD = st.secrets.get("MY_APP_PASSWORD")
-MY_EMAIL = "alannaky6@gmail.com"
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 465
 
 def check_password():
     """Simple password protection."""
@@ -64,7 +58,8 @@ def get_model_list():
         models = client.models.list()
         return sorted([model.id for model in models.data if "gpt" in model.id])
     except Exception as e:
-        st.error(f"Failed to fetch models: {e}")
+        st.error(f"Failed to fetch chat models - check your OpenAI API key and network connection:")
+        logging.error(f"Error fetching models: {e}")
         return []
     
 def get_elevenlabs_model_list():
@@ -72,7 +67,8 @@ def get_elevenlabs_model_list():
         models = voice_client.models.list()
         return sorted([model.model_id for model in models])
     except Exception as e:
-        st.error(f"Failed to fetch ElevenLabs models: {e}")
+        st.error(f"Failed to fetch ElevenLabs models - check your ElevenLabs API key and network connection:")
+        logging.error(f"Error fetching ElevenLabs models: {e}")
         return []
 
 chat_models = get_model_list()
@@ -101,11 +97,13 @@ def read_file(input_file):
             with open(input_file, 'r', encoding='utf-8') as f:
                 return f.read()
         except Exception as e:
-            return f"ERROR reading file from path: {e}"
+            logging.error(f"Error reading file {input_file}: {e}")
+            return f"ERROR reading file from path"
     try:
         return StringIO(input_file.getvalue().decode("utf-8")).read()
     except Exception as e:
-        return f"ERROR reading uploaded file: {e}"
+        logging.error(f"Error reading uploaded file: {e}")
+        return f"ERROR reading uploaded file"
     
 def generate_transcript(messages, user_name="User"):
     transcript = ""
@@ -168,23 +166,6 @@ def analyze_story_stages(messages, analysis_model, analysis_prompt):
     logging.debug("Raw analysis result: %s", result)
     return json_check(result)
 
-def send_email(body, attachment_content, attachment_filename):
-    msg = EmailMessage()
-    msg["From"] = MY_EMAIL
-    msg["To"] = "A.Naky@lboro.ac.uk"
-    msg["Subject"] = f"Testing Report for {st.session_state.get('interview_name', 'Unknown')}"
-    msg.set_content(body)
-    msg.add_attachment(
-        attachment_content,
-        maintype="text",
-        subtype="plain",
-        filename=attachment_filename
-    )
-
-    with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as smtp:
-        smtp.login(MY_EMAIL, MY_APP_PASSWORD)
-        smtp.send_message(msg)
-
 def read_csv():
     DEFAULT_FILE_PATH = "default_prompts.csv"
     string_data = None  
@@ -201,7 +182,8 @@ def read_csv():
             prompt_list = list(reader)
             return prompt_list
         except csv.Error as e:
-            st.error(f"Error reading CSV data: {e}")
+            logging.error("Error reading CSV data: %s", e)
+            st.error(f"Error reading CSV data - check the formatting carefully")
             return
 
 def play_sound(text, key, voice_id):
@@ -228,7 +210,8 @@ def play_sound(text, key, voice_id):
             st.session_state[f"{key}_audio"] = audio_bytes
 
         except Exception as e:
-            st.error(f"Error occurred while playing sound: {e}")
+            st.error(f"Error occurred while playing sound - check your elevenlabs key")
+            logging.error(f"Text-to-speech error: {e}")
 
 def transcribe_with_elevenlabs_sdk(audio_bytes: bytes, timeout: int = 600) -> str:
     """
@@ -245,7 +228,8 @@ def transcribe_with_elevenlabs_sdk(audio_bytes: bytes, timeout: int = 600) -> st
         )
         return getattr(resp, "text", "") or resp.get("text", "")
     except Exception as e:
-        st.error(f"Transcription failed: {e}")
+        st.error(f"Transcription failed - check your ElevenLabs API key and network connection:")
+        logging.error(f"Transcription failed: {e}")
         return ""
     
 def autoplay_audio(audio_bytes: bytes):
@@ -334,29 +318,6 @@ def generate_testing_report():
             return_text += "####################################################################################################\n"
 
             if 'narrative' in st.session_state: #for each type of story, if it exists, add it in, else generate what would've been made
-                if 'adult_story' in st.session_state:
-                    return_text += f"----------------------##Adult Story##---------------------------: \n {st.session_state.get('adult_story', 'ERROR FETCHING ADULT STORY')}\n\n"
-                    return_text += "####################################################################################################\n"
-                else:
-                    adult_story_context = ""
-                    for selected_title in st.session_state["adult_story_files"]:
-                        for file_obj in st.session_state["titled_prereq_files"]:
-                            if file_obj["title"] == selected_title:
-                                adult_story_context += f"\n\n----------{file_obj['title']}----------\n"
-                                adult_story_context += file_obj["content"]
-                    try:
-                        response = client.chat.completions.create(
-                                model=st.session_state["story_model_select"],
-                                messages=[
-                                    {"role": "system", "content": st.session_state["adult_system_prompt"] + adult_story_context},
-                                    {"role": "user", "content": st.session_state["adult_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state.get('analysis', 'NO ANALYSIS AVAILABLE')+ "\n-------Narrative-------\n"+ st.session_state.get('narrative', 'NO NARRATIVE AVAILABLE')}
-                                ]
-                            )
-                        return_text += "-----------------------##Adult Story [NOT GENERATED BY USER]##------------------------------:\n" + response.choices[0].message.content
-                        return_text += "####################################################################################################\n"
-                    except Exception as e:
-                        st.error(f"Error generating adult story: {e}")
-
                 if 'child_story' in st.session_state:
                     return_text += f"----------------------------##Child Story##-----------------------------: \n {st.session_state.get('child_story', 'ERROR FETCHING CHILD STORY')}\n\n"
                 else:
@@ -377,7 +338,8 @@ def generate_testing_report():
                         return_text += "-------------------------------##Child Story [NOT GENERATED BY USER]##------------------------------:\n" + response.choices[0].message.content
                         return_text += "####################################################################################################\n"
                     except Exception as e:
-                        st.error(f"Error generating child story: {e}")
+                        st.error(f"Error generating child story")
+                        logging.error(f"Error generating child story: {e}")
             else:
                 return_text += "NO STORIES WERE GENERATED IN THIS SESSION"
         else:
@@ -684,7 +646,8 @@ with tab1:
                     reply = response.choices[0].message.content
                 except Exception as e:
                     reply = "Sorry, there was an issue generating a response."
-                    st.error(f"Error: {e}")
+                    st.error(f"Interviwer response generation failed - check your OpenAI API key and network connection:")
+                    logging.error(f"Interviewer response generation error: {e}")
 
             # 6. Append interviewer message
             st.session_state.messages.append({"role": "assistant", "content": reply})
@@ -819,24 +782,25 @@ with tab2:
                     st.success("Narrative Created! - You can now generate more stories!")
                 except Exception as e:
                     st.error("Story Generation Failed - Please try again...")
-                    st.error(f"Error: {e}")
+                    logging.error(f"Story generation error: {e}")
 
         if 'narrative' in st.session_state:
             with st.expander("View your Narrative", expanded=True):
                 st.text_area("Your Narrative Story", value=st.session_state['narrative'], height=500)
-            story_option = st.selectbox(
-                "What type of Story would you like to generate?",
-                ("Adult's Story", "Children's Story (age 3-5)"),
-            )
+            # story_option = st.selectbox(
+            #     "What type of Story would you like to generate?",
+            #     ("Adult's Story", "Children's Story (age 3-5)"),
+            # )
             if voice_options:
                 selected_voice_name = st.selectbox("Select Voice:", list(voice_options.keys()))
                 voice_id = voice_options[selected_voice_name]
-            if st.button("Generate Story"):   
-                if story_option == "Adult's Story":
-                    st.session_state['generate_adult_story'] = True
+            if st.button("Generate Children's Story (age 3-5)"):   
+                st.session_state['generate_child_story'] = True
+                # if story_option == "Adult's Story":
+                #     st.session_state['generate_adult_story'] = True
 
-                if story_option == "Children's Story (age 3-5)":
-                    st.session_state['generate_child_story'] = True
+                # if story_option == "Children's Story (age 3-5)":
+                #     st.session_state['generate_child_story'] = True
 
 
                 #FOR WHEN WE HAVE AN ADULT STORY FRAMEWORK THIS WILL DO THE WHOLE REGEN 3 TIMES THING
@@ -890,28 +854,28 @@ with tab2:
                 #             st.success(f"Story Created! on attempt {attempts} - Enjoy!")
                 #         st.session_state['generate_adult_story'] = False
 
-                if st.session_state.get('generate_adult_story'):
-                    with st.spinner("Writing your story..."):
-                        adult_story_context = ""
-                        for selected_title in st.session_state["adult_story_files"]:
-                            for file_obj in st.session_state["titled_prereq_files"]:
-                                if file_obj["title"] == selected_title:
-                                    adult_story_context += f"\n\n----------{file_obj['title']}----------\n"
-                                    adult_story_context += file_obj["content"]
-                        try:
-                            response = client.chat.completions.create(
-                                    model=st.session_state["story_model_select"],
-                                    messages=[
-                                        {"role": "system", "content": st.session_state["adult_system_prompt"] + adult_story_context},
-                                        {"role": "user", "content": st.session_state["adult_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]+ "\n-------Narrative-------\n"+ st.session_state["narrative"]}
-                                    ]
-                                )
-                            st.session_state['adult_story'] = response.choices[0].message.content
-                            play_sound(st.session_state['adult_story'], key="adult_voice", voice_id=voice_id)
-                            st.success("Story Created! - Enjoy!")
-                            st.session_state['generate_adult_story'] = False
-                        except Exception as e:
-                            st.error("Story Generation Failed - Please try again...")
+                # if st.session_state.get('generate_adult_story'):
+                #     with st.spinner("Writing your story..."):
+                #         adult_story_context = ""
+                #         for selected_title in st.session_state["adult_story_files"]:
+                #             for file_obj in st.session_state["titled_prereq_files"]:
+                #                 if file_obj["title"] == selected_title:
+                #                     adult_story_context += f"\n\n----------{file_obj['title']}----------\n"
+                #                     adult_story_context += file_obj["content"]
+                #         try:
+                #             response = client.chat.completions.create(
+                #                     model=st.session_state["story_model_select"],
+                #                     messages=[
+                #                         {"role": "system", "content": st.session_state["adult_system_prompt"] + adult_story_context},
+                #                         {"role": "user", "content": st.session_state["adult_init_prompt"] + "\n-------Analysis-------\n"+ st.session_state["analysis"]+ "\n-------Narrative-------\n"+ st.session_state["narrative"]}
+                #                     ]
+                #                 )
+                #             st.session_state['adult_story'] = response.choices[0].message.content
+                #             play_sound(st.session_state['adult_story'], key="adult_voice", voice_id=voice_id)
+                #             st.success("Story Created! - Enjoy!")
+                #             st.session_state['generate_adult_story'] = False
+                #         except Exception as e:
+                #             st.error("Story Generation Failed - Please try again...")
 
                 if st.session_state.get('generate_child_story'):
                     with st.spinner("Writing your story..."):
@@ -965,11 +929,11 @@ with tab2:
 
 
     # Show stories if they exist
-    if 'adult_story' in st.session_state:
-        with st.container():
-            st.text_area("Your Adult Story", value=st.session_state['adult_story'], height=500)
-            if "adult_voice_audio" in st.session_state:
-                st.audio(st.session_state["adult_voice_audio"], format="audio/mp3")
+    # if 'adult_story' in st.session_state:
+    #     with st.container():
+    #         st.text_area("Your Adult Story", value=st.session_state['adult_story'], height=500)
+    #         if "adult_voice_audio" in st.session_state:
+    #             st.audio(st.session_state["adult_voice_audio"], format="audio/mp3")
 
     if 'child_story' in st.session_state:
         with st.container():
@@ -977,9 +941,9 @@ with tab2:
             if "child_voice_audio" in st.session_state:
                 st.audio(st.session_state["child_voice_audio"], format="audio/mp3")
 
-    #test report and email button
+    #test report
     if 'narrative' in st.session_state:
-        if st.button("📑Generate and Submit your testing report"):
+        if st.button("📑Generate and Download your testing report"):
             # Step 1: Generate text
             text_result = generate_testing_report()
 
@@ -995,16 +959,6 @@ with tab2:
                 mime="text/plain"
             )
 
-            # Step 4: Email a copy
-            try:
-                send_email(
-                    body="Please find attached the testing report generated for the participant: .",
-                    attachment_content=text_result.encode("utf-8"),
-                    attachment_filename=file_name
-                )
-                st.success("✅ File successfully submitted - thank you so much for taking the time to test Spirit Engine 2.0!")
-            except Exception as e:
-                st.error("⚠️ Could not send email: Please email your testing file to A.Naky@lboro.ac.uk")
 
 with tab3:
     st.title("Settings")    
@@ -1110,20 +1064,20 @@ with tab3:
         st.subheader("Story Generation Settings")
         st.selectbox("Select a model for storytelling", chat_models, key="story_model_select")
 
-        tab1ns, tab2as, tab3cs = st.tabs(["📃Narrative Settings", "👨‍🦰Adult Stories", "🧒Children's Stories"])
+        tab1ns, tab3cs = st.tabs(["📃Narrative Settings", "🧒Children's Stories"])
         with tab1ns:
             st.text_area("Narrative System Prompt:", key = "narrative_system_prompt",height = 350)
             st.text_area("Narrative Initialisation Prompt",key = "narrative_init_prompt")
 
-        with tab2as:
-            st.text_area("Adult Story System Prompt:", key = "adult_system_prompt",height = 350)
-            st.text_area("Adult Story Initialisation Prompt",key = "adult_init_prompt")
+        # with tab2as:
+        #     st.text_area("Adult Story System Prompt:", key = "adult_system_prompt",height = 350)
+        #     st.text_area("Adult Story Initialisation Prompt",key = "adult_init_prompt")
 
-            st.multiselect(
-            "Select prerequisite files for Adult Story Generation",
-            options=prereq_titles,
-            key="adult_story_files"
-        )
+        #     st.multiselect(
+        #     "Select prerequisite files for Adult Story Generation",
+        #     options=prereq_titles,
+        #     key="adult_story_files"
+        # )
 
         with tab3cs:
             st.text_area("Children's Story System Prompt:", key = "child_system_prompt",height = 350)
