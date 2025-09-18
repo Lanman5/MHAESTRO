@@ -924,7 +924,7 @@ with tab2:
                         if story_text:
                             st.session_state['child_story'] = story_text
                             play_sound(st.session_state['child_story'], key="child_voice", voice_id=voice_id)
-                            st.success(f"Story Created! on attempt {attempts} - Enjoy!")
+                            st.success(f"Story Created! - Enjoy!")
                         st.session_state['generate_child_story'] = False
 
 
@@ -956,22 +956,13 @@ with tab2:
                 file_name=f"{name}_interview_child_story.txt",
                 mime="text/plain"
             )
-        
-        if st.button("📑Generate and Download your testing report"):
-            # Step 1: Generate text
-            text_result = generate_testing_report()
 
-            # Step 2: Prepare file in memory for download
-            file_name = f"{st.session_state.get('interview_name', 'JohnDoe')}_testing_report.txt"
-            file_bytes = BytesIO(text_result.encode("utf-8"))
-
-            # Step 3: Show download button
-            st.download_button(
-                label="💾 Download your testing report",
-                data=file_bytes,
-                file_name=file_name,
-                mime="text/plain"
-            )
+        st.download_button(
+            label="💾 Download your testing report",
+            data= BytesIO(generate_testing_report().encode("utf-8")),
+            file_name=f"{st.session_state.get('interview_name', 'JohnDoe')}_testing_report.txt",
+            mime="text/plain"
+        )
     
 with tab3:
     st.title("Settings")    
