@@ -956,13 +956,23 @@ with tab2:
                 file_name=f"{name}_interview_child_story.txt",
                 mime="text/plain"
             )
+        
+        #COMMENT OUT IF YOU DON'T WANT
+        if st.button("📑Generate your testing report"):
+            # Step 1: Generate text
+            text_result = generate_testing_report()
 
-        st.download_button(
-            label="💾 Download your testing report",
-            data= BytesIO(generate_testing_report().encode("utf-8")),
-            file_name=f"{st.session_state.get('interview_name', 'JohnDoe')}_testing_report.txt",
-            mime="text/plain"
-        )
+            # Step 2: Prepare file in memory for download
+            file_name = f"{st.session_state.get('interview_name', 'JohnDoe')}_testing_report.txt"
+            file_bytes = BytesIO(text_result.encode("utf-8"))
+
+            # Step 3: Show download button
+            st.download_button(
+                label="💾 Download your testing report",
+                data=file_bytes,
+                file_name=file_name,
+                mime="text/plain"
+            )
     
 with tab3:
     st.title("Settings")    
