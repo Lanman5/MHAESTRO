@@ -1,0 +1,177 @@
+{
+  "schema_version": "mhaestro-policy-2",
+  "survey_id": "cs_open_day",
+  "title": "Computer Science Open Day",
+  "description": "the Computer Science Open Day activities you have just taken part in",
+  "scope_note": "Scope: the activities the visitor took part in today, what worked, what did not, and what they would change. Out of scope: admissions decisions, entry requirements, fees, accommodation, and anything about a named member of staff. If a visitor raises one of those, say briefly that a member of staff at the stand can help with it and return to the question in hand.",
+  "steering_note": "Steer towards the specific activities and moments the visitor experienced, not their general impressions of the university. If an answer is about the campus, the city or the course in the abstract, acknowledge it in a few words and ask about what they actually did today. Never suggest an activity they have not mentioned, and never imply a right answer about whether something was good.",
+  "target_minutes": 5,
+  "summary_questions": [
+    "Which Open Day activities you took part in, and how the day went overall",
+    "What you found most useful or enjoyable, and why",
+    "What did not work as well for you",
+    "What you would keep, change or add for next time"
+  ],
+  "root_id": "ask_activities",
+  "nodes": [
+    {
+      "id": "ask_activities",
+      "question": "Which activities did you take part in or have a look at today?",
+      "objective": "Names at least one specific Open Day activity the visitor experienced.",
+      "priority": "core",
+      "topic": "Activities attended",
+      "max_reprobes": 1,
+      "children": [
+        {
+          "condition": "named_specific_activities",
+          "target_id": "ask_overall",
+          "description": "The visitor named one or more identifiable activities."
+        },
+        {
+          "condition": "vague_or_nothing_named",
+          "target_id": "ask_overall",
+          "description": "The visitor answered but did not identify any particular activity."
+        },
+        {
+          "condition": "other_or_unclear",
+          "target_id": "ask_overall",
+          "description": "Anything else, including a refusal or an off-topic answer."
+        }
+      ]
+    },
+    {
+      "id": "ask_overall",
+      "question": "How was the day overall for you?",
+      "objective": "Gives an overall evaluation of the day and some indication of what shaped it.",
+      "priority": "core",
+      "topic": "Overall experience",
+      "max_reprobes": 1,
+      "children": [
+        {
+          "condition": "clear_view_with_reason",
+          "target_id": "ask_liked_most",
+          "description": "The visitor gave an overall view and said something about why."
+        },
+        {
+          "condition": "view_without_reason",
+          "target_id": "probe_stood_out",
+          "description": "The visitor gave an overall view but nothing about what shaped it."
+        },
+        {
+          "condition": "other_or_unclear",
+          "target_id": "probe_stood_out",
+          "description": "Anything else, including a non-committal answer."
+        }
+      ]
+    },
+    {
+      "id": "probe_stood_out",
+      "question": "Was there a particular moment or activity that stood out, good or bad?",
+      "objective": "Identifies at least one concrete moment from the day.",
+      "priority": "optional",
+      "topic": "Overall experience",
+      "max_reprobes": 0,
+      "children": [
+        {
+          "condition": "continue",
+          "target_id": "ask_liked_most",
+          "description": "Always continues to the next core question."
+        }
+      ]
+    },
+    {
+      "id": "ask_liked_most",
+      "question": "Which part did you find most useful or most enjoyable?",
+      "objective": "Names a specific activity or aspect and gives at least one reason it was useful or enjoyable.",
+      "priority": "core",
+      "topic": "What worked well",
+      "max_reprobes": 1,
+      "children": [
+        {
+          "condition": "named_with_reason",
+          "target_id": "ask_improve",
+          "description": "Named something and said why it worked for them."
+        },
+        {
+          "condition": "named_without_reason",
+          "target_id": "probe_why_useful",
+          "description": "Named something but did not say why."
+        },
+        {
+          "condition": "nothing_stood_out",
+          "target_id": "ask_improve",
+          "description": "Nothing in particular stood out as useful or enjoyable."
+        },
+        {
+          "condition": "other_or_unclear",
+          "target_id": "ask_improve",
+          "description": "Anything else."
+        }
+      ]
+    },
+    {
+      "id": "probe_why_useful",
+      "question": "What was it about that one that worked for you?",
+      "objective": "Gives at least one reason the named activity was useful or enjoyable.",
+      "priority": "optional",
+      "topic": "What worked well",
+      "max_reprobes": 0,
+      "children": [
+        {
+          "condition": "continue",
+          "target_id": "ask_improve",
+          "description": "Always continues to the next core question."
+        }
+      ]
+    },
+    {
+      "id": "ask_improve",
+      "question": "Was there anything that did not work so well, or that you expected to see and didn't?",
+      "objective": "Identifies something that fell short, or states clearly that nothing did.",
+      "priority": "core",
+      "topic": "What did not work",
+      "max_reprobes": 1,
+      "children": [
+        {
+          "condition": "named_a_problem_or_gap",
+          "target_id": "ask_suggestions",
+          "description": "Named something that disappointed them or was missing."
+        },
+        {
+          "condition": "nothing_negative",
+          "target_id": "ask_suggestions",
+          "description": "Said nothing fell short."
+        },
+        {
+          "condition": "other_or_unclear",
+          "target_id": "ask_suggestions",
+          "description": "Anything else."
+        }
+      ]
+    },
+    {
+      "id": "ask_suggestions",
+      "question": "If you were helping us plan the next one, what would you keep, change or add?",
+      "objective": "Gives at least one concrete suggestion, or says clearly they would not change anything.",
+      "priority": "core",
+      "topic": "Suggestions for next time",
+      "max_reprobes": 1,
+      "children": [
+        {
+          "condition": "continue",
+          "target_id": "ask_anything_else",
+          "description": "Always continues to the closing question."
+        }
+      ]
+    },
+    {
+      "id": "ask_anything_else",
+      "question": "Last one: anything else about today you'd like us to know?",
+      "objective": "Either adds something new or confirms there is nothing further.",
+      "priority": "core",
+      "topic": "Anything else",
+      "max_reprobes": 0,
+      "children": []
+    }
+  ]
+}

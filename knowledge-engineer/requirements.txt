@@ -1,2 +1,18 @@
-openai
-streamlit
+# Requires Python 3.10 or newer.
+#
+# On Python 3.9 pip silently resolves `anthropic` to the 0.x SDK, which has no
+# `output_config` -- the Anthropic structured-output path would fail at run time
+# instead of at install time. The floor below turns that into a clear install
+# error. On Streamlit Community Cloud, pick Python 3.12 or 3.13 under Advanced
+# settings.
+#
+# Streamlit Community Cloud installs this file when the app lives in a
+# subdirectory. 1.49 is the floor for `width="stretch"` and `st.segmented_control`.
+streamlit>=1.49
+
+# Provider SDKs. All three are optional at run time -- the apps detect which keys
+# and packages are present and offer only those providers -- but Community Cloud
+# installs the whole file, so keep all three listed and switch providers in the UI.
+openai>=1.40
+anthropic>=1.0
+google-genai>=1.0

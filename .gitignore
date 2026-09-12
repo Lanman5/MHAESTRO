@@ -1,0 +1,18 @@
+# Secrets. Never commit these: they carry live API keys and the mailbox password.
+.streamlit/secrets.toml
+*/.streamlit/secrets.toml
+
+# Collected session data. Participant records belong on approved University
+# storage, not in the repository.
+*_session.csv
+*_turns.csv
+*_events.csv
+*_bundle.json
+pooled_sessions.csv
+analysis/data/
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
