@@ -38,8 +38,8 @@ Then open `.streamlit/secrets.toml` and fill it in. It is gitignored. You need:
 
 | Key | Needed for | Notes |
 |---|---|---|
-| `OPENAI_API_KEY` | one provider minimum | GPT-4-class is the published MHAESTRO configuration, so it is the default |
-| `ANTHROPIC_API_KEY` | optional | enables the Claude models in the picker |
+| `ANTHROPIC_API_KEY` | **the default provider** | Claude Haiku 4.5 is the default model |
+| `OPENAI_API_KEY` | optional | enables the GPT models in the picker |
 | `GEMINI_API_KEY` | optional | enables the Gemini models in the picker |
 | `REPORT_FROM_EMAIL` | delivery | the Gmail account that sends session records |
 | `REPORT_EMAIL_PASSWORD` | delivery | a Gmail **App Password**, not your account password |
@@ -118,6 +118,9 @@ made anywhere in them. Work through this with real keys before the event.
 ### K-Eng (the expert tool)
 
 - [ ] Passcode gate refuses a wrong code, accepts the right one.
+- [ ] Press **Test connection** in the sidebar. Both roles must come back green
+      before you go any further — this is the fastest way to catch a bad key,
+      a wrong model id, or a provider outage.
 - [ ] Fill in the event and respondents, start the interview.
 - [ ] Have a genuine 8–10 minute conversation as if you were the Open Day lead.
       Check the questions actually build on your answers rather than reading a list.
@@ -142,8 +145,9 @@ Do this on a phone, not a laptop — that is what visitors will use.
       is usable, the practice banner stays visible, and **no email arrives**.
 - [ ] **Over 18** route: consent form matches the approved wording, **Begin** is
       disabled until the box is ticked, "I do not wish to take part" ends cleanly.
-- [ ] Enter the researcher PIN in the sidebar, then use **Force arm** to walk all
-      four arms in turn:
+- [ ] Enter the researcher PIN in the sidebar and press **Test connection**; both
+      roles must be green before testing anything else.
+- [ ] Then use **Force arm** to walk all four arms in turn:
       - **A** graph + adequacy — should re-probe at most once per question
       - **B** graph, no check — should never re-probe
       - **C** free-form + adequacy — no fixed order, but still gated
@@ -248,6 +252,7 @@ signed into anything, on mobile data rather than campus wifi.
 | A shorter/longer feedback battery | `mhaestro/feedback.py`: flip `include=` on any `EXPERIENCE_ITEMS` or `OPEN_ITEMS` entry; set `DEFAULT_TLX_KEYS = RTLX_KEYS` to restore the full six-subscale TLX. Cut items keep their CSV columns, so the table's shape never changes. |
 | A gentler adequacy bar on a given question | `adequacy.require_reason: false` (or `require_stance: false`) on that node in the policy JSON. Softens the bar without removing the gate, so the arm contrast survives. |
 | Different models per role | Elicitor: researcher sidebar. K-Eng: settings sidebar. Defaults come from `DEFAULT_PROVIDER`, `INTERVIEWER_MODEL` and `CONTROL_MODEL` in secrets. |
+| A model that isn't in the dropdown | Type any model id into the box under the picker, or set it in secrets. The request layer negotiates unsupported parameters away by itself, so a model released after this was written still works; anything it had to drop shows up in the `llm_degraded` column of the events CSV. |
 | Speech input for participants | `RESEARCHER_PIN` sidebar → **Offer speech input**. Needs an OpenAI key. Off by default because it adds latency. |
 | A different survey | Run K-Eng, download the policy, drop it in `knowledge-elicitation/trees/`. |
 

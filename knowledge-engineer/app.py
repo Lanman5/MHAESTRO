@@ -33,11 +33,12 @@ if str(_ROOT) not in sys.path:
 
 import streamlit as st
 
-from mhaestro import agents, delivery, feedback, prompts, schema, ui, viz
+from mhaestro import agents, delivery, feedback, llm, prompts, schema, ui, viz
 from mhaestro.agents import ModelPlan
 from mhaestro.config import get_secret
 from mhaestro.llm import (
     DEFAULT_MODELS,
+    DEFAULT_PROVIDER,
     MODEL_CATALOGUE,
     PROVIDER_LABELS,
     available_providers,
@@ -68,7 +69,7 @@ PHASE_DONE = "done"
 
 def default_plan() -> ModelPlan:
     ready = available_providers()
-    preferred = get_secret("DEFAULT_PROVIDER", "openai")
+    preferred = get_secret("DEFAULT_PROVIDER", DEFAULT_PROVIDER)
     provider = preferred if preferred in ready else (ready[0] if ready else "openai")
     return ModelPlan(
         interviewer_provider=provider,
@@ -161,6 +162,19 @@ def settings_sidebar() -> ModelPlan:
                 key="keng_model_" + model_attr + "_" + provider,
                 label_visibility="collapsed",
             )
+            # Any model id is accepted, not just the catalogue: the request layer
+            # negotiates unsupported parameters away rather than assuming a fixed
+            # capability table, so a newer model still runs.
+            typed = st.text_input(
+                label + " custom model",
+                value="",
+                key="keng_model_custom_" + model_attr,
+                placeholder="or type any model id",
+                label_visibility="collapsed",
+            ).strip()
+            if typed:
+                model = typed
+
             memory[model_attr + ":" + provider] = model
             setattr(plan, provider_attr, provider)
             setattr(plan, model_attr, model)
@@ -168,6 +182,26 @@ def settings_sidebar() -> ModelPlan:
         plan.control_provider = plan.analysis_provider
         plan.control_model = plan.analysis_model
         st.session_state["plan"] = plan
+
+        st.divider()
+        st.caption("One tiny call per role, to check the keys and models work.")
+        if st.button("Test connection", width="stretch"):
+            for role, provider, model in (
+                ("Interview agent", plan.interviewer_provider, plan.interviewer_model),
+                ("Analysis agent", plan.analysis_provider, plan.analysis_model),
+            ):
+                result = llm.complete(
+                    [{"role": "user", "content": "Reply with the single word: ok"}],
+                    provider=provider,
+                    model=model,
+                    max_tokens=1000,
+                    timeout=30.0,
+                )
+                label = role + " -- " + provider + "/" + model
+                if result.ok and result.text.strip():
+                    st.success(label + ": " + str(result.latency_ms) + " ms")
+                else:
+                    st.error(label + ": " + (result.error or "empty response"))
 
         st.divider()
         with st.expander("Prompt provenance"):

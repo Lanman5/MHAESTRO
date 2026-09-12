@@ -17,6 +17,8 @@ os.environ["EXPERT_PASSCODE"] = "test-passcode"
 
 from streamlit.testing.v1 import AppTest
 
+from mhaestro import llm
+
 fails = []
 
 
@@ -44,22 +46,33 @@ at.run()
 at.sidebar.text_input[0].set_value("test-pin").run()
 
 interviewer_provider = sel(at, "sel_provider_interviewer")
-check("interviewer provider starts on openai", interviewer_provider.value == "openai", interviewer_provider.value)
+check("interviewer provider defaults to anthropic", interviewer_provider.value == "anthropic",
+      interviewer_provider.value)
 
 interviewer_model = sel(at, "sel_model_interviewer_")
-check("interviewer model starts as gpt-4o", interviewer_model.value == "gpt-4o", interviewer_model.value)
-check("model options are openai's, not mixed with other providers",
-      set(interviewer_model.options) == {"gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"},
+check("interviewer model defaults to haiku 4.5", interviewer_model.value == "claude-haiku-4-5",
+      interviewer_model.value)
+check("model options are Anthropic's only",
+      set(interviewer_model.options) == {"claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"},
       interviewer_model.options)
 
-# --- The actual bug report: switch provider to anthropic.
-interviewer_provider.set_value("anthropic").run()
+# --- Switch away to another provider and back: the model must follow.
+interviewer_provider.set_value("openai").run()
+model_openai = sel(at, "sel_model_interviewer_")
+check("switching to OpenAI offers only OpenAI models",
+      set(model_openai.options) == {"gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"},
+      model_openai.options)
+check("switching to OpenAI lands on a real OpenAI model",
+      model_openai.value in {"gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"}, model_openai.value)
+
+# --- The original bug report: switch to anthropic and check the models follow.
+sel(at, "sel_provider_interviewer").set_value("anthropic").run()
 
 model_after_switch = sel(at, "sel_model_interviewer_")
 check("model dropdown now offers only Anthropic models",
       set(model_after_switch.options) == {"claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5"},
       model_after_switch.options)
-check("model auto-lands on a real Anthropic model (not gpt-4o)",
+check("model auto-lands on a real Anthropic model (not an OpenAI one)",
       model_after_switch.value in {"claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5"},
       model_after_switch.value)
 check("plan itself was updated to anthropic + a valid anthropic model",
@@ -75,8 +88,8 @@ check("plan reflects the explicit choice",
       at.session_state["plan"].interviewer_model == "claude-opus-5",
       at.session_state["plan"].interviewer_model)
 
-# --- Switch back to openai: should remember the earlier openai choice (gpt-4o),
-# not carry over claude-opus-5, and not crash.
+# --- Switch back to openai: should show openai models, not carry over
+# claude-opus-5, and not crash.
 sel(at, "sel_provider_interviewer").set_value("openai").run()
 model_back = sel(at, "sel_model_interviewer_")
 check("switching back to openai shows openai models only",
@@ -105,6 +118,22 @@ check("control-agent role switches independently to gemini models",
 check("interviewer role is untouched by the control-agent switch",
       sel(at, "sel_provider_interviewer").value == "anthropic")
 
+# --- A model id that is in no catalogue must still be accepted.
+custom = [t for t in at.sidebar.text_input if (t.key or "").startswith("sel_model_custom_interviewer")]
+check("a free-text model field is offered", bool(custom), [t.key for t in at.sidebar.text_input])
+if custom:
+    custom[0].set_value("claude-sonnet-4-5").run()
+    check("a typed model id overrides the dropdown",
+          at.session_state["plan"].interviewer_model == "claude-sonnet-4-5",
+          at.session_state["plan"].interviewer_model)
+    check("typing a custom model raises nothing", not at.exception,
+          [e.value for e in at.exception])
+    custom = [t for t in at.sidebar.text_input if (t.key or "").startswith("sel_model_custom_interviewer")]
+    custom[0].set_value("").run()
+    check("clearing it falls back to the dropdown",
+          at.session_state["plan"].interviewer_model in llm.MODEL_CATALOGUE["anthropic"],
+          at.session_state["plan"].interviewer_model)
+
 no_exception = not at.exception
 check("no exceptions raised across the whole sequence", no_exception, [e.value for e in at.exception])
 
@@ -115,7 +144,9 @@ at2.run()
 at2.text_input[0].set_value("test-passcode").run()
 
 interviewer2 = sel(at2, "keng_provider_interviewer_provider")
-interviewer2.set_value("anthropic").run()
+check("K-Eng also defaults to anthropic", interviewer2.value == "anthropic", interviewer2.value)
+interviewer2.set_value("openai").run()
+sel(at2, "keng_provider_interviewer_provider").set_value("anthropic").run()
 model2 = sel(at2, "keng_model_interviewer_model_")
 check("K-Eng interviewer model switches to Anthropic options",
       set(model2.options) == {"claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5"}, model2.options)

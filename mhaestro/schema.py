@@ -473,8 +473,27 @@ def coverage(policy: dict, visited: List[str]) -> Dict[str, Any]:
     on_path_core = [n for n in visited_set if nodes.get(n, {}).get("priority") == CORE]
     all_core = set(core_nodes(policy)) & reachable_from(policy, policy.get("root_id", ""))
     return {
+        # Structural coverage is only defined for a session that traversed a graph.
+        # The free-form arms have no node path, and reporting 0-of-6 for them would
+        # read in a pooled analysis as "covered nothing" rather than "not measured
+        # this way" -- use the coded coverage, which is computed for every arm.
+        "applicable": True,
         "nodes_visited": len(visited_set),
         "core_visited": len(on_path_core),
         "core_total_reachable": len(all_core),
+        "core_rate": round(len(on_path_core) / len(all_core), 4) if all_core else "",
         "visited_ids": sorted(visited_set),
+    }
+
+
+def coverage_not_applicable(reason: str) -> Dict[str, Any]:
+    """The structural-coverage record for an arm that never traversed a graph."""
+    return {
+        "applicable": False,
+        "reason": reason,
+        "nodes_visited": "",
+        "core_visited": "",
+        "core_total_reachable": "",
+        "core_rate": "",
+        "visited_ids": [],
     }

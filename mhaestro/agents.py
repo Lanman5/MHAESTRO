@@ -107,7 +107,7 @@ def ask_interviewer(
         messages,
         provider=plan.interviewer_provider,
         model=plan.interviewer_model,
-        max_tokens=400,
+        max_tokens=1000,
         temperature=0.6 if plan.interviewer_provider != "anthropic" else None,
         effort="low",
     )
@@ -164,7 +164,7 @@ def check_adequacy(
         model=plan.control_model,
         json_schema=P.ADEQUACY_SCHEMA if plan.control_provider != "openai" else None,
         want_json=True,
-        max_tokens=500,
+        max_tokens=1024,
         temperature=0.0 if plan.control_provider != "anthropic" else None,
         effort="low",
     )
@@ -330,7 +330,7 @@ def choose_branch(
         model=plan.control_model,
         json_schema=P.TRAVERSAL_SCHEMA if plan.control_provider != "openai" else None,
         want_json=True,
-        max_tokens=350,
+        max_tokens=1024,
         temperature=0.0 if plan.control_provider != "anthropic" else None,
         effort="low",
     )
@@ -512,7 +512,7 @@ def code_coverage(
         model=plan.control_model,
         json_schema=P.COVERAGE_SCHEMA if plan.control_provider != "openai" else None,
         want_json=True,
-        max_tokens=1200,
+        max_tokens=1500,
         temperature=0.0 if plan.control_provider != "anthropic" else None,
     )
 
@@ -549,7 +549,7 @@ def why_hint(log: SessionLog, plan: ModelPlan, *, node: Dict[str, Any]) -> str:
         ],
         provider=plan.control_provider,
         model=plan.control_model,
-        max_tokens=120,
+        max_tokens=512,
         temperature=0.3 if plan.control_provider != "anthropic" else None,
         effort="low",
     )

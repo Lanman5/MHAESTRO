@@ -19,7 +19,7 @@ os.environ["RESEARCHER_PIN"] = "test-pin"
 
 from streamlit.testing.v1 import AppTest
 
-from mhaestro import agents, llm, schema
+from mhaestro import agents, arms, llm, schema
 
 ELICIT = str(ROOT / "knowledge-elicitation" / "app.py")
 POLICY = schema.normalise_policy(
@@ -147,6 +147,9 @@ def run_session(arm_id, *, fake, replies=40, skip_at=None):
     return at, turns
 
 
+# Collected per arm so the cross-arm invariants can be checked at the end.
+ARM_RECORDS = {}
+
 # ================================================================= arm by arm
 for arm_id, expect_adequacy, expect_traversal in (
     ("A", True, True),
@@ -182,6 +185,48 @@ for arm_id, expect_adequacy, expect_traversal in (
     check("arm %s produced summaries" % arm_id, len(ss(at, "summaries", [])) == 4, len(ss(at, "summaries", [])))
     check("arm %s turns carry per-turn measures" % arm_id,
           all("reply_words" in t and "t_elapsed_s" in t for t in log.turns), len(log.turns))
+
+    ARM_RECORDS[arm_id] = log
+
+# ================================================ invariants that make arms comparable
+print("\n=== cross-arm invariants ===")
+
+import csv as _csv
+import io as _io
+
+headers = {a: (_csv.DictReader(_io.StringIO(log.turns_csv())).fieldnames or [])
+           for a, log in ARM_RECORDS.items()}
+check("the turn table has the same columns in every arm",
+      len({tuple(h) for h in headers.values()}) == 1,
+      {a: len(h) for a, h in headers.items()})
+check("adequacy columns exist even in the arms that never run the checker",
+      all("adequacy_confidence" in h for h in headers.values()))
+
+for arm_id, log in ARM_RECORDS.items():
+    structural = log.meta.get("coverage_structural", {})
+    expects_graph = arms.get_arm(arm_id).uses_policy_graph
+    check("arm %s marks structural coverage applicable=%s" % (arm_id, expects_graph),
+          structural.get("applicable") is expects_graph, structural.get("applicable"))
+    if not expects_graph:
+        # A zero here would read in a pooled analysis as "covered nothing" rather
+        # than "not measured this way".
+        check("arm %s reports blank, not zero, structural coverage" % arm_id,
+              structural.get("core_visited") == "" and log.meta.get("coverage_structural_rate") == "",
+              (structural.get("core_visited"), log.meta.get("coverage_structural_rate")))
+
+constructs = {}
+for arm_id, log in ARM_RECORDS.items():
+    summaries = [e for e in log.events if e["event_type"] == "summary_generated"]
+    detail = json.loads(summaries[0]["detail_json"]) if summaries else {}
+    constructs[arm_id] = tuple(detail.get("constructs", []))
+check("every arm rates the same fidelity constructs",
+      len(set(constructs.values())) == 1, {a: len(c) for a, c in constructs.items()})
+
+check("the two factors are recorded independently for every arm",
+      all(ARM_RECORDS[a].meta["arm_structure"] in ("tree", "freeform")
+          and ARM_RECORDS[a].meta["arm_governance"] in ("adequacy", "none")
+          for a in ARM_RECORDS))
+
 
 # ============================================================= the soft cap
 print("\n=== soft cap (checker never satisfied) ===")

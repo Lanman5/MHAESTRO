@@ -31,11 +31,12 @@ if str(_ROOT) not in sys.path:
 
 import streamlit as st
 
-from mhaestro import agents, arms, consent, delivery, feedback, prompts, schema, speech, ui
+from mhaestro import agents, arms, consent, delivery, feedback, llm, prompts, schema, speech, ui
 from mhaestro.agents import ModelPlan
 from mhaestro.config import get_secret
 from mhaestro.llm import (
     DEFAULT_MODELS,
+    DEFAULT_PROVIDER,
     MODEL_CATALOGUE,
     PROVIDER_LABELS,
     available_providers,
@@ -145,6 +146,56 @@ def researcher_sidebar() -> None:
         st.write({k: v for k, v in randomiser.counts.items()})
         st.caption("Assigned: " + str(randomiser.assigned))
 
+        st.divider()
+        _diagnostics()
+
+
+def _diagnostics() -> None:
+    """Connection test and recent agent failures.
+
+    A failed model call shows the participant a generic apology and otherwise
+    leaves no trace on screen -- the reason only reaches the emailed event log,
+    which is no use while somebody is standing at the stand waiting. These two
+    panels put the actual error in front of whoever is running the study.
+    """
+    plan: ModelPlan = st.session_state.get("plan") or default_plan()
+
+    st.markdown("**Check the models work**")
+    st.caption("One tiny call per role. Do this before the event.")
+    if st.button("Test connection", width="stretch"):
+        for role, provider, model in (
+            ("Interviewer", plan.interviewer_provider, plan.interviewer_model),
+            ("Control agents", plan.control_provider, plan.control_model),
+        ):
+            result = llm.complete(
+                [{"role": "user", "content": "Reply with the single word: ok"}],
+                provider=provider,
+                model=model,
+                max_tokens=1000,
+                timeout=30.0,
+            )
+            label = role + " -- " + provider + "/" + model
+            if result.ok and result.text.strip():
+                st.success(label + ": " + str(result.latency_ms) + " ms")
+            else:
+                st.error(label + ": " + (result.error or "empty response"))
+
+    log: SessionLog = st.session_state.get("log")
+    st.markdown("**Agent failures this session**")
+    if log is None:
+        st.caption("No session has started yet.")
+        return
+
+    failures = [e for e in log.events if not e.get("ok", True)]
+    if not failures:
+        st.caption("None, across " + str(len(log.events)) + " logged events.")
+        return
+
+    st.error(str(len(failures)) + " failed call(s) this session.")
+    for event in failures[-3:]:
+        st.caption((event.get("agent_role") or event.get("event_type", "")) + " · " + str(event.get("model", "")))
+        st.code(str(event.get("error") or "")[:400])
+
 
 def _model_controls() -> None:
     ready = available_providers()
@@ -195,6 +246,19 @@ def _model_controls() -> None:
             key="sel_model_" + role + "_" + provider,
             label_visibility="collapsed",
         )
+        # Any model id is accepted, not just the catalogue: the request layer
+        # negotiates unsupported parameters away rather than assuming a fixed
+        # capability table, so a model released after this was written still runs.
+        typed = st.text_input(
+            "or type any model id",
+            value="",
+            key="sel_model_custom_" + role,
+            placeholder="e.g. claude-sonnet-4-5",
+            label_visibility="collapsed",
+        ).strip()
+        if typed:
+            model = typed
+
         memory[role + ":" + provider] = model
         setattr(plan, provider_attr, provider)
         setattr(plan, model_attr, model)
@@ -206,7 +270,7 @@ def _model_controls() -> None:
 
 def default_plan() -> ModelPlan:
     ready = available_providers()
-    preferred = get_secret("DEFAULT_PROVIDER", "openai")
+    preferred = get_secret("DEFAULT_PROVIDER", DEFAULT_PROVIDER)
     provider = preferred if preferred in ready else (ready[0] if ready else "openai")
     return ModelPlan(
         interviewer_provider=provider,
@@ -611,9 +675,17 @@ def finish_interview(policy: dict) -> None:
         ]
         coded = agents.code_coverage(log, plan, transcript=transcript, topics=topics)
 
-    structural = schema.coverage(policy, st.session_state.get("visited", []))
+    arm: arms.Arm = st.session_state["arm"]
+    structural = (
+        schema.coverage(policy, st.session_state.get("visited", []))
+        if arm.uses_policy_graph
+        else schema.coverage_not_applicable("no decision graph in this arm; use coverage_coded")
+    )
     log.set_meta(
         coverage_structural=structural,
+        # Flattened alongside the JSON blob so the analysis table has a plain
+        # numeric column rather than something that must be parsed per row.
+        coverage_structural_rate=structural.get("core_rate", ""),
         coverage_coded=coded,
         coverage_coded_rate=(
             round(sum(1 for v in coded.values() if v == "covered") / len(coded), 4) if coded else ""

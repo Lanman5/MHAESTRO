@@ -59,6 +59,45 @@ EV_ERROR = "error"
 _WORD = re.compile(r"[A-Za-z0-9']+")
 _SENTENCE = re.compile(r"[.!?]+")
 
+# The canonical per-turn column set, written for every arm whether or not that arm
+# populates each one. Keeping it fixed is what lets turn files be concatenated
+# across participants who were in different arms.
+TURN_COLUMNS: List[str] = [
+    "session_id",
+    "pseudonym",
+    "arm_id",
+    "kind",
+    "turn_index",
+    "t_elapsed_s",
+    # Graph arms only.
+    "node_id",
+    "node_topic",
+    "node_priority",
+    # The re-probe dose: 0 on a first attempt at a node, 1+ on a re-probe.
+    "reprobe_index",
+    "outcome",
+    # Participant behaviour.
+    "reply_latency_s",
+    "input_mode",
+    "reply_chars",
+    "reply_words",
+    "reply_sentences",
+    "reply_unique_words",
+    "reply_type_token_ratio",
+    "reply_mean_word_length",
+    "reply_mean_sentence_words",
+    # Adequacy arms only.
+    "adequacy_checked",
+    "adequate",
+    "adequacy_on_topic",
+    "adequacy_wants_to_move_on",
+    "adequacy_missing",
+    "adequacy_confidence",
+    "adequacy_soft_capped",
+    "adequacy_fallback_used",
+    "adequacy_reason",
+]
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
@@ -150,6 +189,7 @@ class SessionLog:
             "output_tokens": "",
             "llm_attempts": "",
             "llm_repaired_json": "",
+            "llm_degraded": "",
             "ok": ok,
             "error": error,
             "detail_json": json.dumps(detail or {}, ensure_ascii=False, sort_keys=True),
@@ -164,6 +204,11 @@ class SessionLog:
                     "output_tokens": getattr(llm, "output_tokens", "") or "",
                     "llm_attempts": getattr(llm, "attempts", ""),
                     "llm_repaired_json": getattr(llm, "repaired_json", ""),
+                    # Request features the provider rejected for this model and
+                    # which were therefore dropped. Blank is the normal case; a
+                    # value here means this turn ran on a weaker request than
+                    # intended, which the analysis needs to be able to see.
+                    "llm_degraded": ",".join(getattr(llm, "degraded", []) or []),
                     # A row is a failure if *either* the transport failed or the
                     # caller judged the reply unusable. A traversal agent that
                     # returns an undeclared label has made a successful API call
@@ -205,9 +250,17 @@ class SessionLog:
         return buffer.getvalue()
 
     def turns_csv(self) -> str:
+        """One row per participant turn, with a column set that does not vary by arm.
+
+        The arms record different things -- only the adequacy arms have a checker
+        verdict, only the graph arms have a node -- so emitting just the keys that
+        happen to be present would produce a differently-shaped file per arm, and
+        concatenating them across participants would silently misalign. The
+        canonical columns are always written, blank where they do not apply.
+        """
         if not self.turns:
             return ""
-        fieldnames: List[str] = []
+        fieldnames: List[str] = list(TURN_COLUMNS)
         for turn in self.turns:
             for key in turn:
                 if key not in fieldnames:

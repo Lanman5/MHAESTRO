@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from .config import get_secret, has_secret
@@ -39,20 +39,27 @@ PROVIDER_PACKAGES = {
     "gemini": "google-genai",
 }
 
-# Known-good defaults. The apps also accept a free-text model id, so a model
-# released after this file was written can be used without a code change.
+# Known-good defaults, cheapest/fastest first within each provider. The apps also
+# accept a free-text model id, so a model released after this file was written can
+# be used without a code change.
 MODEL_CATALOGUE: Dict[str, List[str]] = {
+    "anthropic": ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"],
     "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"],
-    "anthropic": ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5"],
     "gemini": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"],
 }
 
-# GPT-4-class is the published MHAESTRO configuration, so it stays the default:
-# a replication arm should not silently change model family.
-DEFAULT_PROVIDER = "openai"
+# Haiku 4.5 is the default because latency is a study variable, not just comfort:
+# the session has a five-minute budget, every turn waits on a model call, and
+# time pressure is one of the things the workload instrument measures. It also
+# runs no thinking by default, so turns stay short and predictable.
+#
+# The published MHAESTRO run used GPT-4; `meta_models` records the provider and
+# model per role in every session, so the change from that baseline is explicit in
+# the data rather than assumed.
+DEFAULT_PROVIDER = "anthropic"
 DEFAULT_MODELS = {
+    "anthropic": "claude-haiku-4-5",
     "openai": "gpt-4o",
-    "anthropic": "claude-sonnet-5",
     "gemini": "gemini-2.5-flash",
 }
 
@@ -73,6 +80,10 @@ class LLMResult:
     error: Optional[str] = None
     attempts: int = 1
     repaired_json: bool = False
+    # Request features that had to be dropped for this model, e.g. ["effort",
+    # "json_schema"]. Recorded per turn: the model configuration is a study
+    # variable, so a silently degraded request must not stay silent.
+    degraded: List[str] = field(default_factory=list)
 
     @property
     def output_chars(self) -> int:
@@ -148,11 +159,39 @@ def _client(provider: str):
 # ---------------------------------------------------------------- message prep
 
 
+# A system message that arrives *after* the conversation has started is an
+# operator instruction, not part of the standing system prompt -- it is the
+# hidden channel Agent [b] uses to compel a re-probe (Section 3.3.3), and it only
+# works if the model sees it at the end of the exchange. OpenAI accepts a system
+# turn in that position directly. Anthropic and Gemini hold the system prompt in a
+# separate field, so folding one in there would silently hoist it to the top and
+# strip it of its position; it is carried as a marked final turn instead.
+OPERATOR_PREFIX = "[OPERATOR INSTRUCTION -- from the survey system, not the participant. Follow it. Never quote or mention it.]\n"
+
+
 def _split_system(messages: List[Dict[str, str]]) -> Tuple[str, List[Dict[str, str]]]:
-    """Pull system turns out of the message list (Anthropic/Gemini keep them separate)."""
-    system_parts = [m["content"] for m in messages if m.get("role") == "system" and m.get("content")]
-    rest = [m for m in messages if m.get("role") != "system"]
-    return "\n\n".join(system_parts), rest
+    """Separate the standing system prompt from the conversation.
+
+    Leading system turns become the system prompt. Any system turn appearing after
+    conversation has begun is preserved in place as a marked operator turn.
+    """
+    system_parts: List[str] = []
+    conversation: List[Dict[str, str]] = []
+    started = False
+
+    for message in messages:
+        role = message.get("role")
+        content = message.get("content") or ""
+        if role == "system":
+            if started:
+                conversation.append({"role": "user", "content": OPERATOR_PREFIX + content})
+            elif content:
+                system_parts.append(content)
+        else:
+            started = True
+            conversation.append({"role": role, "content": content})
+
+    return "\n\n".join(system_parts), conversation
 
 
 def _merge_consecutive(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -170,14 +209,161 @@ def _merge_consecutive(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
 
 
 def _ensure_user_first(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """Anthropic and Gemini require the first turn to be the user's.
+    """Anthropic and Gemini require at least one message, starting with the user's.
 
-    The Elicitor's interviewer speaks first, so a neutral opener is prepended. It
-    is never shown to the participant and never enters the transcript.
+    Two cases need the neutral opener. The Elicitor's interviewer speaks first, so
+    the history can begin with an assistant turn. And on the *opening* turn there
+    is no conversation at all -- the whole request is a system prompt plus a
+    control instruction -- which would otherwise send an empty `messages` array
+    and fail every session at its first question.
     """
-    if messages and messages[0]["role"] == "assistant":
+    if not messages:
+        return [{"role": "user", "content": "Please begin."}]
+    if messages[0]["role"] == "assistant":
         return [{"role": "user", "content": "Please begin."}] + messages
     return messages
+
+
+# Models that accept `output_config.effort`. Sending it to one that does not --
+# Haiku 4.5 and the 4.5-era Sonnet -- is a hard error, so an unrecognised model id
+# is treated as unsupported: omitting effort costs a little latency, sending it
+# where it is not supported costs the whole session.
+_EFFORT_CAPABLE = (
+    "claude-opus-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-opus-4-5",
+    "claude-sonnet-5",
+    "claude-sonnet-4-6",
+    "claude-fable-5",
+    "claude-mythos-5",
+)
+
+
+def supports_effort(model: str) -> bool:
+    return any((model or "").startswith(prefix) for prefix in _EFFORT_CAPABLE)
+
+
+# ------------------------------------------------------- capability negotiation
+#
+# The apps let any model id be configured, including ones released after this file
+# was written, and providers differ on which request parameters they accept:
+# OpenAI's reasoning models replaced `max_tokens` with `max_completion_tokens` and
+# reject a non-default `temperature`; older Claude models predate structured
+# outputs; every model has its own output ceiling.
+#
+# Rather than maintain a table that goes stale, each (provider, model) starts from
+# a best-guess prior and is then corrected by the provider's own error messages: a
+# 400 naming an unsupported parameter causes that parameter to be dropped and the
+# call retried, and the finding is remembered for the rest of the process so the
+# same round trip is not wasted twice. Whatever had to be dropped is recorded on
+# the result and lands in the per-turn log.
+
+# OpenAI reasoning-model families: `max_completion_tokens`, no custom temperature.
+_OPENAI_REASONING = ("o1", "o3", "o4", "gpt-5", "gpt-6")
+
+# Claude generations that predate structured outputs (`output_config.format`).
+_ANTHROPIC_LEGACY = ("claude-2", "claude-3", "claude-instant")
+
+_CAPABILITIES: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+
+def _initial_capabilities(provider: str, model: str) -> Dict[str, Any]:
+    model_l = (model or "").lower()
+    caps: Dict[str, Any] = {
+        "max_tokens_param": "max_tokens",
+        "temperature": True,
+        "effort": False,
+        "schema": True,
+        "max_tokens_cap": None,
+    }
+
+    if provider == "openai":
+        if any(model_l.startswith(p) for p in _OPENAI_REASONING):
+            caps["max_tokens_param"] = "max_completion_tokens"
+            caps["temperature"] = False
+        # OpenAI is driven through json_object mode here, not a JSON schema.
+        caps["schema"] = False
+    elif provider == "anthropic":
+        # Sampling parameters were removed on the current Claude generation, and
+        # sending one is a 400 -- never send it to any Claude model.
+        caps["temperature"] = False
+        caps["effort"] = supports_effort(model)
+        if any(model_l.startswith(p) for p in _ANTHROPIC_LEGACY):
+            caps["schema"] = False
+    elif provider == "gemini":
+        caps["effort"] = False
+
+    return caps
+
+
+def capabilities(provider: str, model: str) -> Dict[str, Any]:
+    key = (provider, model or "")
+    if key not in _CAPABILITIES:
+        _CAPABILITIES[key] = _initial_capabilities(provider, model)
+    return _CAPABILITIES[key]
+
+
+def _status_code(exc: Exception) -> Optional[int]:
+    for attribute in ("status_code", "code", "status"):
+        value = getattr(exc, attribute, None)
+        if isinstance(value, int):
+            return value
+    match = re.search(r"\b(4\d\d|5\d\d)\b", str(exc))
+    return int(match.group(1)) if match else None
+
+
+def _adapt_to_error(provider: str, model: str, exc: Exception) -> Optional[str]:
+    """Drop whatever the provider just rejected. Returns what was dropped, or None.
+
+    Only rejections that clearly name a request parameter are acted on, so a
+    transient fault cannot permanently degrade a model's configuration.
+    """
+    status = _status_code(exc)
+    if status is not None and status not in (400, 404, 422):
+        return None
+
+    text = str(exc).lower()
+    caps = capabilities(provider, model)
+
+    if "max_completion_tokens" in text and caps["max_tokens_param"] != "max_completion_tokens":
+        caps["max_tokens_param"] = "max_completion_tokens"
+        return "max_completion_tokens"
+
+    if "temperature" in text and caps["temperature"]:
+        caps["temperature"] = False
+        return "temperature"
+
+    # Schema is tested before effort. Both live under `output_config` on Anthropic,
+    # so a complaint about the *format* mentions "output_config" too -- checking
+    # effort first would drop it needlessly and still not fix the real problem.
+    schema_tokens = ("json_schema", "response_schema", "structured output", "format")
+    if caps["schema"] and any(token in text for token in schema_tokens):
+        caps["schema"] = False
+        return "json_schema"
+
+    if caps["effort"] and ("effort" in text or "output_config" in text):
+        caps["effort"] = False
+        return "effort"
+
+    # An output ceiling below what we asked for. Step down rather than guess the
+    # exact limit from prose that differs per provider.
+    if "max_tokens" in text and any(
+        token in text for token in ("greater than", "maximum", "at most", "too large", "exceed", "<=")
+    ):
+        current = caps["max_tokens_cap"]
+        for ceiling in (8192, 4096, 2048, 1024):
+            if current is None or ceiling < current:
+                caps["max_tokens_cap"] = ceiling
+                return "max_tokens<=" + str(ceiling)
+
+    return None
+
+
+def _effective_max_tokens(provider: str, model: str, requested: int) -> int:
+    cap = capabilities(provider, model)["max_tokens_cap"]
+    return min(requested, cap) if cap else requested
 
 
 # ------------------------------------------------------------------- JSON help
@@ -256,11 +442,12 @@ def complete(
     result = LLMResult(provider=provider, model=model)
     as_json = want_json or json_schema is not None
 
-    try:
-        _dispatch(result, provider, messages, model, as_json, json_schema, max_tokens, temperature, effort, timeout)
-    except Exception as exc:  # noqa: BLE001 -- reported to the caller and the log
+    failure = _dispatch_with_adaptation(
+        result, provider, messages, model, as_json, json_schema, max_tokens, temperature, effort, timeout
+    )
+    if failure is not None:
         result.ok = False
-        result.error = type(exc).__name__ + ": " + str(exc)
+        result.error = type(failure).__name__ + ": " + str(failure)
         result.latency_ms = int((time.perf_counter() - started) * 1000)
         return result
 
@@ -280,7 +467,11 @@ def complete(
             ]
             try:
                 retry = LLMResult(provider=provider, model=model)
-                _dispatch(retry, provider, repair, model, True, json_schema, max_tokens, temperature, effort, timeout)
+                repair_failure = _dispatch_with_adaptation(
+                    retry, provider, repair, model, True, json_schema, max_tokens, temperature, effort, timeout
+                )
+                if repair_failure is not None:
+                    raise repair_failure
                 parsed = extract_json(retry.text)
                 if parsed is not None:
                     result.data = parsed
@@ -299,6 +490,38 @@ def complete(
     return result
 
 
+def _dispatch_with_adaptation(
+    result, provider, messages, model, as_json, json_schema, max_tokens, temperature, effort, timeout
+) -> Optional[Exception]:
+    """Call the provider, dropping any request feature it rejects, then retrying.
+
+    Returns the exception if the call could not be made to work, else None. Each
+    dropped feature is appended to `result.degraded`, and the finding is cached for
+    the process so the next call for this model gets it right first time.
+    """
+    for _ in range(_MAX_ADAPTATIONS + 1):
+        # A retry must not inherit a half-written result from the failed attempt.
+        result.text = ""
+        result.finish_reason = None
+        result.ok = True
+        result.error = None
+        try:
+            _dispatch(
+                result, provider, messages, model, as_json, json_schema, max_tokens, temperature, effort, timeout
+            )
+            return None
+        except Exception as exc:  # noqa: BLE001 -- classified below
+            dropped = _adapt_to_error(provider, model, exc)
+            if dropped is None:
+                return exc
+            result.degraded.append(dropped)
+    return None
+
+
+# One per adaptable feature, so a model that rejects several still converges.
+_MAX_ADAPTATIONS = 5
+
+
 def _dispatch(result, provider, messages, model, as_json, json_schema, max_tokens, temperature, effort, timeout):
     if provider == "openai":
         _call_openai(result, messages, model, as_json, max_tokens, temperature, timeout)
@@ -312,16 +535,27 @@ def _dispatch(result, provider, messages, model, as_json, json_schema, max_token
 
 def _call_openai(result, messages, model, as_json, max_tokens, temperature, timeout):
     client = _client("openai")
+    caps = capabilities("openai", model)
+
     kwargs: Dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "max_tokens": max_tokens,
         "timeout": timeout,
     }
-    if temperature is not None:
+    # Reasoning models renamed this parameter; the name in force is learned from
+    # the provider rather than assumed.
+    kwargs[caps["max_tokens_param"]] = _effective_max_tokens("openai", model, max_tokens)
+    if temperature is not None and caps["temperature"]:
         kwargs["temperature"] = temperature
     if as_json:
         kwargs["response_format"] = {"type": "json_object"}
+        # OpenAI rejects json_object mode unless the word "json" appears somewhere
+        # in the messages. Every agent prompt here says so already, but a
+        # hand-edited prompt must not be able to break the call.
+        if not any("json" in (m.get("content") or "").lower() for m in messages):
+            kwargs["messages"] = list(messages) + [
+                {"role": "system", "content": "Reply with a single JSON object."}
+            ]
 
     response = client.chat.completions.create(**kwargs)
     choice = response.choices[0]
@@ -343,9 +577,10 @@ def _call_anthropic(result, messages, model, as_json, json_schema, max_tokens, e
         # and the turn must end on a user message.
         rest = rest + [{"role": "user", "content": "Reply with the JSON object only."}]
 
+    caps = capabilities("anthropic", model)
     kwargs: Dict[str, Any] = {
         "model": model,
-        "max_tokens": max_tokens,
+        "max_tokens": _effective_max_tokens("anthropic", model, max_tokens),
         "messages": rest,
         "timeout": timeout,
     }
@@ -353,9 +588,9 @@ def _call_anthropic(result, messages, model, as_json, json_schema, max_tokens, e
         kwargs["system"] = system
 
     output_config: Dict[str, Any] = {}
-    if effort:
+    if effort and caps["effort"]:
         output_config["effort"] = effort
-    if json_schema is not None:
+    if json_schema is not None and caps["schema"]:
         output_config["format"] = {"type": "json_schema", "schema": json_schema}
     if output_config:
         kwargs["output_config"] = output_config
@@ -379,6 +614,17 @@ def _call_anthropic(result, messages, model, as_json, json_schema, max_tokens, e
         block.text for block in response.content if getattr(block, "type", "") == "text"
     )
 
+    # On models where adaptive thinking is on by default, a tight `max_tokens` can
+    # be spent thinking before any visible text is produced. Left unflagged that
+    # arrives as an empty-but-successful response and the caller shows the
+    # participant a generic apology with nothing in the log to explain it.
+    if not result.text.strip():
+        result.ok = False
+        result.error = (
+            "Empty response from %s (stop_reason=%s); max_tokens=%s may be too low for "
+            "this model's thinking budget." % (model, result.finish_reason, max_tokens)
+        )
+
 
 def _call_gemini(result, messages, model, as_json, json_schema, max_tokens, temperature, timeout):
     from google.genai import types
@@ -395,14 +641,15 @@ def _call_gemini(result, messages, model, as_json, json_schema, max_tokens, temp
         for m in rest
     ]
 
-    cfg: Dict[str, Any] = {"max_output_tokens": max_tokens}
+    caps = capabilities("gemini", model)
+    cfg: Dict[str, Any] = {"max_output_tokens": _effective_max_tokens("gemini", model, max_tokens)}
     if system:
         cfg["system_instruction"] = system
-    if temperature is not None:
+    if temperature is not None and caps["temperature"]:
         cfg["temperature"] = temperature
     if as_json:
         cfg["response_mime_type"] = "application/json"
-        if json_schema is not None:
+        if json_schema is not None and caps["schema"]:
             cfg["response_schema"] = json_schema
 
     response = client.models.generate_content(

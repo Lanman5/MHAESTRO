@@ -67,6 +67,7 @@ PROCESS = [
     "reply_latency_median_s",
     "agent_latency_mean_ms",
     "meta_coverage_coded_rate",
+    "meta_coverage_structural_rate",
 ]
 
 
