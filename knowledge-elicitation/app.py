@@ -155,6 +155,13 @@ def _model_controls() -> None:
         return
 
     plan: ModelPlan = st.session_state.get("plan") or default_plan()
+    # A provider-keyed selectbox (below) gets a fresh widget identity every time
+    # the provider changes, and Streamlit garbage-collects a keyed widget's stored
+    # value the moment it isn't rendered for a run -- so the widget key alone
+    # can't remember "the model I had picked for Anthropic" across a trip back to
+    # OpenAI and forward again. This plain dict is untouched by that cleanup.
+    memory: Dict[str, str] = st.session_state.setdefault("model_memory", {})
+
     for role, label, provider_attr, model_attr in (
         ("interviewer", "Interviewer (Agent a)", "interviewer_provider", "interviewer_model"),
         ("control", "Control agents (b, c, summariser)", "control_provider", "control_model"),
@@ -167,16 +174,28 @@ def _model_controls() -> None:
             format_func=lambda p: PROVIDER_LABELS[p],
             key="sel_provider_" + role,
         )
+
         catalogue = MODEL_CATALOGUE.get(provider, [])
-        current_model = getattr(plan, model_attr)
-        options = catalogue + ([current_model] if current_model and current_model not in catalogue else [])
+        # Prefer this provider's remembered choice; fall back to the plan's stored
+        # model only when it actually belongs to this provider (never leak an
+        # OpenAI model in as the default once the provider has switched to
+        # Anthropic); otherwise fall back to that provider's own default.
+        remembered = memory.get(role + ":" + provider, "")
+        plan_model = getattr(plan, model_attr) if current_provider == provider else ""
+        default_model = remembered or plan_model or DEFAULT_MODELS.get(provider, "")
+        options = catalogue + ([default_model] if default_model and default_model not in catalogue else [])
+
+        # Keyed by provider: switching provider always lands on a valid model for
+        # it (Streamlit treats the new key as a fresh widget) instead of pinning
+        # onto whatever model the *previous* provider had selected.
         model = st.selectbox(
             label + " model",
             options=options or [DEFAULT_MODELS.get(provider, "")],
-            index=options.index(current_model) if current_model in options else 0,
-            key="sel_model_" + role,
+            index=options.index(default_model) if default_model in options else 0,
+            key="sel_model_" + role + "_" + provider,
             label_visibility="collapsed",
         )
+        memory[role + ":" + provider] = model
         setattr(plan, provider_attr, provider)
         setattr(plan, model_attr, model)
 

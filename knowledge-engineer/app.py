@@ -114,6 +114,13 @@ def settings_sidebar() -> ModelPlan:
                 st.caption(PROVIDER_LABELS[name] + ": " + missing_reason(name))
             st.stop()
 
+        # A provider-keyed selectbox (below) gets a fresh widget identity every
+        # time the provider changes, and Streamlit garbage-collects a keyed
+        # widget's stored value the moment it isn't rendered for a run -- so the
+        # widget key alone can't remember a provider's last-picked model across a
+        # trip to another provider and back. This plain dict is untouched by that.
+        memory = st.session_state.setdefault("keng_model_memory", {})
+
         for label, provider_attr, model_attr, note in (
             ("Interview agent", "interviewer_provider", "interviewer_model", "Talks to you."),
             (
@@ -134,16 +141,27 @@ def settings_sidebar() -> ModelPlan:
                 key="keng_provider_" + provider_attr,
                 label_visibility="collapsed",
             )
+
             catalogue = MODEL_CATALOGUE.get(provider, [])
-            current_model = getattr(plan, model_attr)
-            options = catalogue + ([current_model] if current_model and current_model not in catalogue else [])
+            # Prefer this provider's remembered choice; fall back to the plan's
+            # stored model only when it actually belongs to this provider (never
+            # leak a leftover model in as the default once the provider has
+            # switched); otherwise fall back to that provider's own default.
+            remembered = memory.get(model_attr + ":" + provider, "")
+            plan_model = getattr(plan, model_attr) if current == provider else ""
+            default_model = remembered or plan_model or DEFAULT_MODELS.get(provider, "")
+            options = catalogue + ([default_model] if default_model and default_model not in catalogue else [])
+
+            # Keyed by provider: switching provider always lands on a valid model
+            # for it instead of pinning onto the previous provider's choice.
             model = st.selectbox(
                 label + " model",
                 options=options or [DEFAULT_MODELS.get(provider, "")],
-                index=options.index(current_model) if current_model in options else 0,
-                key="keng_model_" + model_attr,
+                index=options.index(default_model) if default_model in options else 0,
+                key="keng_model_" + model_attr + "_" + provider,
                 label_visibility="collapsed",
             )
+            memory[model_attr + ":" + provider] = model
             setattr(plan, provider_attr, provider)
             setattr(plan, model_attr, model)
 
