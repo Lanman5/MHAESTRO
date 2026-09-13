@@ -301,5 +301,50 @@ for name, fn in (
     check(name + ": json schema is attached",
           "format" in (req.get("output_config") or {}), list((req.get("output_config") or {}).keys()))
 
+
+
+# ========================================= provider/model pairing can never break
+print("\n=== a model from another provider can never be paired with this one ===")
+
+# The failure this guards against: secrets carried INTERVIEWER_MODEL="gpt-4o" from
+# an earlier configuration, the default provider later became Anthropic, and the
+# two were combined into anthropic/gpt-4o -- which 404s on every single call, so
+# every turn showed the participant an apology and nothing said why.
+check("an OpenAI model under Anthropic is corrected",
+      llm.resolve_model("anthropic", "gpt-4o") == "claude-haiku-4-5",
+      llm.resolve_model("anthropic", "gpt-4o"))
+check("an Anthropic model under OpenAI is corrected",
+      llm.resolve_model("openai", "claude-haiku-4-5") == "gpt-4o",
+      llm.resolve_model("openai", "claude-haiku-4-5"))
+check("a Gemini model under Anthropic is corrected",
+      llm.resolve_model("anthropic", "gemini-2.5-flash") == "claude-haiku-4-5")
+check("a model in the provider's own catalogue is left alone",
+      llm.resolve_model("anthropic", "claude-opus-5") == "claude-opus-5")
+check("an unknown id is trusted, so a new model still works",
+      llm.resolve_model("anthropic", "claude-sonnet-4-5") == "claude-sonnet-4-5")
+check("an empty model falls back to the provider default",
+      llm.resolve_model("anthropic", "") == "claude-haiku-4-5")
+
+bad = ModelPlan(interviewer_provider="anthropic", interviewer_model="gpt-4o",
+                control_provider="anthropic", control_model="gpt-4o",
+                analysis_provider="anthropic", analysis_model="gpt-4o")
+check("a ModelPlan cannot hold a cross-provider pairing",
+      bad.as_dict() == {"interviewer": "anthropic/claude-haiku-4-5",
+                        "control": "anthropic/claude-haiku-4-5",
+                        "analysis": "anthropic/claude-haiku-4-5"},
+      bad.as_dict())
+check("and reports no outstanding mismatch once corrected", bad.mismatches() == [], bad.mismatches())
+
+# The corrected plan must actually produce a working request, not just look right.
+_reset()
+llm._CLIENTS["anthropic"] = FakeAnthropic()
+log = SessionLog(tool="elicitor")
+text, result = agents.ask_interviewer(
+    log, bad, system_prompt=prompts.ELICITOR_INTERVIEWER_TREE,
+    system_values=SYSTEM_VALUES, history=[], control_instruction=OPENING, node_id="n")
+check("the corrected plan produces a working call", result.ok and "went wrong" not in text, result.error)
+check("and it used the Anthropic model", CAPTURED[-1][1]["model"] == "claude-haiku-4-5",
+      CAPTURED[-1][1]["model"])
+
 print("\n" + ("ALL PASS" if not fails else "FAILURES (%d): %s" % (len(fails), ", ".join(fails))))
 sys.exit(1 if fails else 0)

@@ -43,6 +43,7 @@ from mhaestro.llm import (
     PROVIDER_LABELS,
     available_providers,
     missing_reason,
+    resolve_model,
 )
 from mhaestro.telemetry import (
     EV_POLICY_LOADED,
@@ -73,8 +74,11 @@ def default_plan() -> ModelPlan:
     provider = preferred if preferred in ready else (ready[0] if ready else "openai")
     return ModelPlan(
         interviewer_provider=provider,
+        interviewer_model=resolve_model(provider, get_secret("INTERVIEWER_MODEL", "") or ""),
         control_provider=provider,
+        control_model=resolve_model(provider, get_secret("CONTROL_MODEL", "") or ""),
         analysis_provider=provider,
+        analysis_model=resolve_model(provider, get_secret("CONTROL_MODEL", "") or ""),
     )
 
 
@@ -148,9 +152,9 @@ def settings_sidebar() -> ModelPlan:
             # stored model only when it actually belongs to this provider (never
             # leak a leftover model in as the default once the provider has
             # switched); otherwise fall back to that provider's own default.
-            remembered = memory.get(model_attr + ":" + provider, "")
+            remembered = resolve_model(provider, memory.get(model_attr + ":" + provider, ""))
             plan_model = getattr(plan, model_attr) if current == provider else ""
-            default_model = remembered or plan_model or DEFAULT_MODELS.get(provider, "")
+            default_model = resolve_model(provider, remembered or plan_model)
             options = catalogue + ([default_model] if default_model and default_model not in catalogue else [])
 
             # Keyed by provider: switching provider always lands on a valid model
@@ -165,15 +169,16 @@ def settings_sidebar() -> ModelPlan:
             # Any model id is accepted, not just the catalogue: the request layer
             # negotiates unsupported parameters away rather than assuming a fixed
             # capability table, so a newer model still runs.
-            typed = st.text_input(
-                label + " custom model",
-                value="",
-                key="keng_model_custom_" + model_attr,
-                placeholder="or type any model id",
-                label_visibility="collapsed",
-            ).strip()
+            with st.expander("Use a model that isn't listed"):
+                typed = st.text_input(
+                    "Model id for " + PROVIDER_LABELS[provider],
+                    value="",
+                    key="keng_model_custom_" + model_attr,
+                    placeholder=DEFAULT_MODELS.get(provider, ""),
+                    help="Leave blank to use the picker above.",
+                ).strip()
             if typed:
-                model = typed
+                model = resolve_model(provider, typed)
 
             memory[model_attr + ":" + provider] = model
             setattr(plan, provider_attr, provider)
@@ -182,6 +187,9 @@ def settings_sidebar() -> ModelPlan:
         plan.control_provider = plan.analysis_provider
         plan.control_model = plan.analysis_model
         st.session_state["plan"] = plan
+
+        for note in plan.mismatches():
+            st.error(note)
 
         st.divider()
         st.caption("One tiny call per role, to check the keys and models work.")
@@ -212,6 +220,27 @@ def settings_sidebar() -> ModelPlan:
 
 
 # ---------------------------------------------------------------------- setup
+
+
+@st.cache_resource(show_spinner=False)
+def _preflight_once(provider: str, model: str) -> tuple:
+    return llm.preflight(provider, model)
+
+
+def station_ready(plan: ModelPlan) -> tuple:
+    """Can this tool reach its models? Returns (ok, reason)."""
+    if str(get_secret("PREFLIGHT", "on")).strip().lower() in ("off", "0", "false", "no"):
+        return True, "Preflight disabled by configuration."
+    if not available_providers():
+        return False, "No provider has an API key."
+    for provider, model in (
+        (plan.interviewer_provider, plan.interviewer_model),
+        (plan.analysis_provider, plan.analysis_model),
+    ):
+        ok, reason = _preflight_once(provider, model)
+        if not ok:
+            return False, provider + "/" + model + " -- " + reason
+    return True, reason
 
 
 def render_setup(plan: ModelPlan) -> None:
@@ -245,7 +274,20 @@ def render_setup(plan: ModelPlan) -> None:
         "survey and to record how well this tool worked for you."
     )
 
-    if st.button("Start the interview", type="primary", width="stretch", disabled=not (context and respondents)):
+    # Checked here rather than at the first question, because the alternative is
+    # discovering a dead API key after ten minutes of interview and losing the lot.
+    ready, reason = station_ready(plan)
+    if not ready:
+        st.error("The models are not reachable, so the interview cannot start.")
+        st.caption(reason)
+        st.write("**" + llm.explain_failure(reason) + "**")
+
+    if st.button(
+        "Start the interview",
+        type="primary",
+        width="stretch",
+        disabled=not (context and respondents and ready),
+    ):
         st.session_state.update({"ctx_context": context, "ctx_respondents": respondents})
         begin_session(plan, context, respondents, minutes, role)
         st.rerun()
@@ -345,6 +387,12 @@ def render_interview(plan: ModelPlan) -> None:
                     "target_minutes": log.meta.get("target_minutes", 5),
                 },
                 history=list(st.session_state["messages"]),
+                # The Elicitor's generic fallback asks about an open day visit,
+                # which is the wrong conversation entirely here.
+                fallback=(
+                    "Thanks -- noted. What else would you need to know from a respondent "
+                    "for this survey to be worth running?"
+                ),
             )
         st.session_state["messages"].append({"role": "assistant", "content": text})
         log.add_message("assistant", text)
@@ -564,6 +612,15 @@ def _render_policy_export(policy: dict, report: schema.ValidationReport) -> None
     # apps share a filesystem. On Streamlit Community Cloud they do not, and a file
     # written there disappears on the next restart -- so the download is the real
     # install route and this is a local-development convenience.
+    if not report.ok:
+        # The file can still be downloaded -- it is useful for diagnosing what the
+        # synthesis agent produced -- but the Elicitor validates on load and will
+        # refuse it, so say that here rather than letting it fail at the far end.
+        st.warning(
+            "This graph did not pass validation, so the Elicitor will refuse to run it. "
+            "Redo the interview, or fix the file by hand before installing it."
+        )
+
     if right.button("Save into the Elicitor", width="stretch", disabled=not report.ok):
         try:
             TREES_DIR.mkdir(parents=True, exist_ok=True)

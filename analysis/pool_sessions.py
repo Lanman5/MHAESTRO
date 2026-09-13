@@ -82,6 +82,13 @@ def load(folder: str) -> List[Dict[str, str]]:
     return rows
 
 
+def _as_int(value: Any) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
 def numeric(rows: List[Dict[str, str]], field: str) -> List[float]:
     out = []
     for row in rows:
@@ -153,6 +160,35 @@ def main() -> int:
 
     if not elicitor:
         return 0
+
+    # Data quality, before any outcome is reported. A session whose provider was
+    # unreachable still ran -- every question falls back to the policy's own
+    # wording -- but it is then a scripted questionnaire, not the system under
+    # test, and pooling it would dilute exactly the effect being measured.
+    scripted = [r for r in elicitor if _as_int(r.get("n_scripted_questions")) > 0]
+    errored = [r for r in elicitor if _as_int(r.get("n_agent_errors")) > 0]
+    if scripted or errored:
+        print("\nData quality warnings:")
+        if scripted:
+            print(
+                "  %d of %d sessions contain scripted questions (the model was unreachable "
+                "for at least one turn). Consider excluding them, or report them separately."
+                % (len(scripted), len(elicitor))
+            )
+            for row in scripted[:10]:
+                print(
+                    "    %s  arm %s  %s scripted of %s questions"
+                    % (
+                        row.get("pseudonym", "?"),
+                        row.get("meta_arm_id", "?"),
+                        row.get("n_scripted_questions", "?"),
+                        row.get("n_participant_turns", "?"),
+                    )
+                )
+        if errored:
+            print("  %d sessions logged at least one failed agent call." % len(errored))
+    else:
+        print("\nData quality: no scripted turns and no failed agent calls in any session.")
 
     by_arm = {}
     for arm in ("A", "B", "C", "D"):

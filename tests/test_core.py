@@ -216,5 +216,157 @@ check("leaf terminates without a model call", nxt is None and detail["outcome"] 
 nxt, detail = agents.choose_branch(log2, plan, policy=policy, node_id="ask_suggestions", path=[], transcript="")
 check("single child auto-advances", nxt == "ask_anything_else" and detail["model_consulted"] is False)
 
+
+# ------------------------------------------------------------------- speech
+print("\n--- speech backends ---")
+import os as _os
+
+from mhaestro import speech
+
+_ALL_KEYS = ("ELEVENLABS_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY")
+
+
+def _only(*keys):
+    """Pretend exactly these provider keys are configured.
+
+    Clears every key first: a real ELEVENLABS_API_KEY left in the developer's
+    environment by another project would otherwise leak into these assertions.
+    """
+    for name in _ALL_KEYS:
+        _os.environ.pop(name, None)
+    for k in keys:
+        _os.environ[k] = "test-not-real"
+    speech._CLIENTS.clear()
+
+
+# --- which backend gets picked
+_only("ELEVENLABS_API_KEY")
+check("ElevenLabs alone can transcribe", speech.active_backend() == "elevenlabs", speech.active_backend())
+check("  ...with Scribe", speech.active_model("elevenlabs") == "scribe_v1", speech.active_model("elevenlabs"))
+
+_only("OPENAI_API_KEY")
+check("OpenAI alone can transcribe", speech.active_backend() == "openai", speech.active_backend())
+
+_only("GEMINI_API_KEY")
+check("Gemini alone can transcribe", speech.active_backend() == "gemini", speech.active_backend())
+
+# Claude takes text, images and PDFs -- not audio.
+_only("ANTHROPIC_API_KEY")
+check("Anthropic alone cannot transcribe", speech.active_backend() is None, speech.active_backend())
+check("  ...and the reason says why", "Claude cannot accept audio" in speech.unavailable_reason(),
+      speech.unavailable_reason())
+check("  ...and transcribe() refuses without raising", speech.transcribe(b"xx")[0] is None)
+
+_only(*_ALL_KEYS)
+check("ElevenLabs is preferred when everything is available",
+      speech.ordered_backends() == ["elevenlabs", "openai", "gemini"], speech.ordered_backends())
+_os.environ["TRANSCRIBE_PROVIDER"] = "gemini"
+check("an explicit override is hoisted to the front",
+      speech.ordered_backends()[0] == "gemini", speech.ordered_backends())
+check("  ...and the others remain as fallbacks", len(speech.ordered_backends()) == 3,
+      speech.ordered_backends())
+_os.environ.pop("TRANSCRIBE_PROVIDER", None)
+
+
+# --- fallback behaviour: the app must work completely if ElevenLabs fails
+class _Boom:
+    """A backend that raises however it is called."""
+
+    def __init__(self, label="down"):
+        self.label = label
+
+    def __getattr__(self, _name):
+        return self
+
+    def __call__(self, *a, **k):
+        raise RuntimeError(self.label)
+
+
+def _fake_stt(text):
+    class _R:
+        pass
+
+    r = _R()
+    r.text = text
+
+    class _STT:
+        def convert(self, **kwargs):
+            return r
+
+    class _C:
+        speech_to_text = _STT()
+
+    return _C()
+
+
+def _fake_openai(text):
+    class _R:
+        pass
+
+    r = _R()
+    r.text = text
+
+    class _T:
+        def create(self, **kwargs):
+            return r
+
+    class _A:
+        transcriptions = _T()
+
+    class _C:
+        audio = _A()
+
+    return _C()
+
+
+_only(*_ALL_KEYS)
+
+# 1. ElevenLabs errors -> falls through to OpenAI, session unaffected.
+speech._CLIENTS["elevenlabs"] = _Boom("elevenlabs is down")
+speech._CLIENTS["openai"] = _fake_openai("the robotics lab")
+text, error, prov = speech.transcribe(b"audio")
+check("ElevenLabs failing falls through to OpenAI", text == "the robotics lab", (text, error))
+check("  ...and the fallback is recorded",
+      prov["asr_provider"] == "openai" and prov["asr_fell_back"] is True, prov)
+check("  ...and both attempts are on the record",
+      prov["asr_attempts"] == "elevenlabs:error;openai:ok", prov["asr_attempts"])
+
+# 2. Every backend errors -> reported, never raised.
+speech._CLIENTS["openai"] = _Boom("openai is down")
+speech._CLIENTS["gemini"] = _Boom("gemini is down")
+text, error, prov = speech.transcribe(b"audio")
+check("every backend failing is reported, not raised", text is None and "down" in error, error)
+check("  ...naming each one that was tried",
+      prov["asr_attempts"] == "elevenlabs:error;openai:error;gemini:error", prov["asr_attempts"])
+
+# 3. A successful-but-silent recording is an answer, not a failure.
+speech._CLIENTS["elevenlabs"] = _fake_stt("   ")
+text, error, prov = speech.transcribe(b"audio")
+check("silence does not burn the other backends",
+      prov["asr_attempts"] == "elevenlabs:empty", prov["asr_attempts"])
+check("  ...and is reported as no speech", text is None and "No speech" in error, error)
+
+# 4. ElevenLabs works -> used, no fallback flag.
+speech._CLIENTS["elevenlabs"] = _fake_stt("the VR demo was best")
+text, error, prov = speech.transcribe(b"audio")
+check("ElevenLabs is used when it works",
+      text == "the VR demo was best" and prov["asr_provider"] == "elevenlabs", prov)
+check("  ...and nothing is marked as a fallback", prov["asr_fell_back"] is False, prov)
+
+# 5. A keyless backend is skipped entirely, not attempted.
+_only("OPENAI_API_KEY", "GEMINI_API_KEY")
+speech._CLIENTS["openai"] = _fake_openai("typed instead")
+text, error, prov = speech.transcribe(b"audio")
+check("a keyless backend is skipped, not attempted",
+      prov["asr_attempts"] == "openai:ok" and prov["asr_fell_back"] is False, prov["asr_attempts"])
+
+check("empty audio is refused cleanly", speech.transcribe(b"")[0] is None)
+check("provenance is always flat and CSV-safe",
+      all(isinstance(v, (str, bool)) for v in speech.transcribe(b"")[2].values()),
+      speech.transcribe(b"")[2])
+
+speech._CLIENTS.clear()
+_only(*_ALL_KEYS)
+
 print("\n" + ("ALL PASS" if not fails else "FAILURES: " + ", ".join(fails)))
 sys.exit(1 if fails else 0)

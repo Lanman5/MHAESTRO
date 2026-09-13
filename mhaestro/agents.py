@@ -25,7 +25,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from . import prompts as P
 from . import schema as S
-from .llm import DEFAULT_MODELS, DEFAULT_PROVIDER, LLMResult, complete
+from .llm import (
+    DEFAULT_MODELS,
+    DEFAULT_PROVIDER,
+    LLMResult,
+    complete,
+    model_belongs_to,
+    resolve_model,
+)
 from .telemetry import (
     EV_ADEQUACY,
     EV_ERROR,
@@ -64,9 +71,25 @@ class ModelPlan:
     analysis_model: str = ""
 
     def __post_init__(self) -> None:
-        self.interviewer_model = self.interviewer_model or DEFAULT_MODELS.get(self.interviewer_provider, "")
-        self.control_model = self.control_model or DEFAULT_MODELS.get(self.control_provider, "")
-        self.analysis_model = self.analysis_model or DEFAULT_MODELS.get(self.analysis_provider, "")
+        # Resolved rather than merely defaulted, so a plan can never hold a model
+        # that belongs to a different provider -- a pairing like anthropic/gpt-4o
+        # fails every single call.
+        self.interviewer_model = resolve_model(self.interviewer_provider, self.interviewer_model)
+        self.control_model = resolve_model(self.control_provider, self.control_model)
+        self.analysis_model = resolve_model(self.analysis_provider, self.analysis_model)
+
+    def mismatches(self) -> List[str]:
+        """Human-readable notes about configuration that had to be corrected."""
+        notes = []
+        for role, provider, model in (
+            ("Interviewer", self.interviewer_provider, self.interviewer_model),
+            ("Control agents", self.control_provider, self.control_model),
+            ("Analysis agent", self.analysis_provider, self.analysis_model),
+        ):
+            owner = model_belongs_to(model)
+            if owner is not None and owner != provider:
+                notes.append(role + ": " + model + " is a " + owner + " model, not " + provider)
+        return notes
 
     def as_dict(self) -> Dict[str, str]:
         return {
@@ -88,6 +111,7 @@ def ask_interviewer(
     history: List[Dict[str, str]],
     control_instruction: str = "",
     node_id: str = "",
+    fallback: str = "",
 ) -> Tuple[str, LLMResult]:
     """Produce the next thing the participant sees.
 
@@ -95,6 +119,14 @@ def ask_interviewer(
     agent's critique is appended as a system message the participant never sees,
     which is what compels the re-probe. It is passed here rather than written into
     the transcript so it can never leak into the visible conversation.
+
+    `fallback` is what the participant sees if the model call fails. In the graph
+    arms it is the node's own question, which is known without any model at all --
+    the decision graph already fixes what must be asked, and only the phrasing is
+    generated. A transient provider fault therefore costs the session its
+    paraphrasing, not its next question. The substitution is recorded on the event
+    and on the turn so a scripted turn is never mistaken for a generated one in
+    the analysis.
     """
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": system_prompt.render(**system_values)}
@@ -113,8 +145,16 @@ def ask_interviewer(
     )
 
     text = (result.text or "").strip()
+    scripted = False
     if not result.ok or not text:
-        text = "Sorry -- something went wrong at our end. Could you say that again?"
+        scripted = True
+        # Never an apology on the way in. "Something went wrong, could you say
+        # that again?" is meaningless on the opening turn -- the participant has
+        # not said anything yet -- and on any turn it asks them to absorb our
+        # fault. The scripted question is a worse interview and a working one.
+        text = (fallback or "").strip() or (
+            "Let us keep going. Could you tell me a little more about your time here today?"
+        )
 
     log.log(
         EV_QUESTION,
@@ -126,10 +166,16 @@ def ask_interviewer(
         detail={
             "had_control_instruction": bool(control_instruction),
             "control_instruction": control_instruction,
+            # True when the participant saw the policy's own wording rather than
+            # Agent [a]'s. Section 4 treats phrasing as part of what MHAESTRO
+            # does, so a scripted turn is a measurable degradation, not a nil
+            # event, and pooled analysis must be able to exclude it.
+            "scripted_fallback": scripted,
             "output_words": len(text.split()),
             "output_chars": len(text),
         },
     )
+    result.substituted = scripted
     return text, result
 
 

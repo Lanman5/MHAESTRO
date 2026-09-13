@@ -6,6 +6,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
 # Dummy keys so the provider pickers populate. No network call is made on any
 # screen exercised here; where one would be, the failure path is what we want.
@@ -15,10 +16,17 @@ os.environ.setdefault("GEMINI_API_KEY", "test-not-real")
 # The K-Eng app is gated when a passcode is configured; the Elicitor's study
 # controls are gated by RESEARCHER_PIN and hidden entirely without one.
 os.environ["EXPERT_PASSCODE"] = "test-passcode"
+# The Elicitor makes one real provider call before letting anyone start. These
+# keys are fake, so that call would fail and every screen below would be the
+# not-ready screen. The preflight itself is exercised deliberately further down.
+os.environ["PREFLIGHT"] = "off"
 
 from streamlit.testing.v1 import AppTest
 
+from _helpers import effective_secret
 from mhaestro import feedback, schema, telemetry
+
+PASSCODE = effective_secret("EXPERT_PASSCODE", "test-passcode")
 
 fails = []
 
@@ -57,7 +65,7 @@ check("K-Eng is gated before anything is spent", len(at.text_input) == 1 and not
 at.text_input[0].set_value("wrong").run()
 check("a wrong passcode is refused", bool(at.error) and ss(at, "expert_access_granted") is None)
 
-at.text_input[0].set_value("test-passcode").run()
+at.text_input[0].set_value(PASSCODE).run()
 no_exception(at, "setup screen renders once unlocked")
 check("setup shows the context field", len(at.text_input) >= 2, len(at.text_input))
 check("provider pickers present", len(at.sidebar.selectbox) >= 4, len(at.sidebar.selectbox))

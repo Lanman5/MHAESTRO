@@ -79,6 +79,10 @@ TURN_COLUMNS: List[str] = [
     # Participant behaviour.
     "reply_latency_s",
     "input_mode",
+    "asr_provider",
+    "asr_model",
+    "asr_fell_back",
+    "asr_attempts",
     "reply_chars",
     "reply_words",
     "reply_sentences",
@@ -301,6 +305,16 @@ class SessionLog:
             "n_why_hints": sum(1 for e in self.events if e["event_type"] == EV_WHY_HINT),
             "n_safeguard_flags": sum(1 for e in self.events if e["event_type"] == EV_SAFEGUARD),
             "n_agent_errors": sum(1 for e in self.events if not e.get("ok", True)),
+            # Questions the participant saw in the policy's own wording because
+            # Agent [a] could not be reached. Non-zero means this session is a
+            # partially scripted interview and should be reported as such, or
+            # excluded -- the phrasing is part of what the tool does.
+            "n_scripted_questions": sum(
+                1
+                for e in self.events
+                if e["event_type"] == EV_QUESTION
+                and json.loads(e["detail_json"] or "{}").get("scripted_fallback") is True
+            ),
             "total_input_tokens": sum(e["input_tokens"] for e in self.events if isinstance(e.get("input_tokens"), int)),
             "total_output_tokens": sum(e["output_tokens"] for e in self.events if isinstance(e.get("output_tokens"), int)),
             "reply_words_total": sum(reply_words),

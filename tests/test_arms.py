@@ -12,14 +12,21 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
 os.environ.setdefault("OPENAI_API_KEY", "sk-test-not-real")
 # The study controls fail closed without a PIN, so the harness supplies one.
 os.environ["RESEARCHER_PIN"] = "test-pin"
+# The key above is fake, so the Elicitor's live preflight would block every
+# screen. Arm behaviour is what this file tests; the preflight has its own.
+os.environ["PREFLIGHT"] = "off"
 
 from streamlit.testing.v1 import AppTest
 
+from _helpers import effective_secret
 from mhaestro import agents, arms, llm, schema
+
+PIN = effective_secret("RESEARCHER_PIN", "test-pin")
 
 ELICIT = str(ROOT / "knowledge-elicitation" / "app.py")
 POLICY = schema.normalise_policy(
@@ -123,7 +130,7 @@ def run_session(arm_id, *, fake, replies=40, skip_at=None):
     at.run()
 
     assert not at.sidebar.selectbox, "study controls must stay hidden until the PIN is entered"
-    at.sidebar.text_input[0].set_value("test-pin")
+    at.sidebar.text_input[0].set_value(PIN)
     at.run()
 
     force = [s for s in at.sidebar.selectbox if "Force arm" in s.label]

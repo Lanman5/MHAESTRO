@@ -8,6 +8,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
 os.environ.setdefault("OPENAI_API_KEY", "sk-test-not-real")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test-not-real")
@@ -17,7 +18,11 @@ os.environ["EXPERT_PASSCODE"] = "test-passcode"
 
 from streamlit.testing.v1 import AppTest
 
+from _helpers import effective_secret
 from mhaestro import llm
+
+PIN = effective_secret("RESEARCHER_PIN", "test-pin")
+PASSCODE = effective_secret("EXPERT_PASSCODE", "test-passcode")
 
 fails = []
 
@@ -43,7 +48,7 @@ def sel(at, key_substring):
 print("=== Elicitor: researcher sidebar model picker ===")
 at = AppTest.from_file(ELICIT, default_timeout=60)
 at.run()
-at.sidebar.text_input[0].set_value("test-pin").run()
+at.sidebar.text_input[0].set_value(PIN).run()
 
 interviewer_provider = sel(at, "sel_provider_interviewer")
 check("interviewer provider defaults to anthropic", interviewer_provider.value == "anthropic",
@@ -141,7 +146,7 @@ check("no exceptions raised across the whole sequence", no_exception, [e.value f
 print("\n=== K-Eng: settings sidebar model picker (same fix) ===")
 at2 = AppTest.from_file(ENGINEER, default_timeout=60)
 at2.run()
-at2.text_input[0].set_value("test-passcode").run()
+at2.text_input[0].set_value(PASSCODE).run()
 
 interviewer2 = sel(at2, "keng_provider_interviewer_provider")
 check("K-Eng also defaults to anthropic", interviewer2.value == "anthropic", interviewer2.value)

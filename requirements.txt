@@ -16,3 +16,8 @@ streamlit>=1.49
 openai>=1.40
 anthropic>=1.0
 google-genai>=1.0
+
+# Optional, speech input only. ElevenLabs Scribe is a purpose-built speech-to-text
+# model; the apps skip it cleanly if the key or this package is absent, and fall
+# back to OpenAI or Gemini if it fails at call time.
+elevenlabs

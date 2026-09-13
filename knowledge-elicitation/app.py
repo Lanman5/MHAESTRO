@@ -18,6 +18,7 @@ is recorded in session metadata so the difference is explicit.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import sys
@@ -41,6 +42,7 @@ from mhaestro.llm import (
     PROVIDER_LABELS,
     available_providers,
     missing_reason,
+    resolve_model,
 )
 from mhaestro.telemetry import (
     EV_ADVANCE,
@@ -134,11 +136,25 @@ def researcher_sidebar() -> None:
         )
         st.session_state["forced_arm"] = None if forced == "Randomise" else forced
 
+        backend = speech.active_backend()
         st.session_state["allow_voice"] = st.toggle(
             "Offer speech input",
             value=st.session_state.get("allow_voice", False),
-            help="Adds a microphone alongside the text box. Requires an OpenAI key.",
+            disabled=backend is None,
+            help="Tucks a microphone into a folded panel under the text box, for the "
+            "few participants who would rather talk than type on a phone. Typing "
+            "stays the default either way, and the tool never speaks back.",
         )
+        if backend is None:
+            # Better than a control that silently does nothing: say which key is
+            # missing and why Anthropic alone cannot provide this.
+            st.caption(speech.unavailable_reason())
+        else:
+            others = [b for b in speech.ordered_backends() if b != backend]
+            line = "Transcribed by " + speech.BACKEND_LABELS[backend] + " · " + speech.active_model(backend)
+            if others:
+                line += " (falls back to " + ", ".join(speech.BACKEND_LABELS[b] for b in others) + ")"
+            st.caption(line)
 
         randomiser = shared_randomiser()
         st.divider()
@@ -228,12 +244,13 @@ def _model_controls() -> None:
 
         catalogue = MODEL_CATALOGUE.get(provider, [])
         # Prefer this provider's remembered choice; fall back to the plan's stored
-        # model only when it actually belongs to this provider (never leak an
-        # OpenAI model in as the default once the provider has switched to
-        # Anthropic); otherwise fall back to that provider's own default.
-        remembered = memory.get(role + ":" + provider, "")
+        # model only when it actually belongs to this provider. Everything is then
+        # resolved against the provider, so a model from another provider's
+        # catalogue -- whether it arrived from secrets, from a stale remembered
+        # value, or from a stored widget state -- can never become the default.
+        remembered = resolve_model(provider, memory.get(role + ":" + provider, ""))
         plan_model = getattr(plan, model_attr) if current_provider == provider else ""
-        default_model = remembered or plan_model or DEFAULT_MODELS.get(provider, "")
+        default_model = resolve_model(provider, remembered or plan_model)
         options = catalogue + ([default_model] if default_model and default_model not in catalogue else [])
 
         # Keyed by provider: switching provider always lands on a valid model for
@@ -249,15 +266,20 @@ def _model_controls() -> None:
         # Any model id is accepted, not just the catalogue: the request layer
         # negotiates unsupported parameters away rather than assuming a fixed
         # capability table, so a model released after this was written still runs.
-        typed = st.text_input(
-            "or type any model id",
-            value="",
-            key="sel_model_custom_" + role,
-            placeholder="e.g. claude-sonnet-4-5",
-            label_visibility="collapsed",
-        ).strip()
+        # Tucked away and clearly labelled -- an unexplained text box next to the
+        # model picker just reads as clutter.
+        with st.expander("Use a model that isn't listed"):
+            typed = st.text_input(
+                "Model id for " + PROVIDER_LABELS[provider],
+                value="",
+                key="sel_model_custom_" + role,
+                placeholder=DEFAULT_MODELS.get(provider, ""),
+                help="Leave blank to use the picker above.",
+            ).strip()
         if typed:
-            model = typed
+            model = resolve_model(provider, typed)
+            if model != typed:
+                st.warning(typed + " is not a " + PROVIDER_LABELS[provider] + " model; using " + model + ".")
 
         memory[role + ":" + provider] = model
         setattr(plan, provider_attr, provider)
@@ -267,19 +289,87 @@ def _model_controls() -> None:
     plan.analysis_model = plan.control_model
     st.session_state["plan"] = plan
 
+    # Surfaced rather than silently corrected: a mismatch means the secrets file
+    # is wrong and will keep producing one on every restart until it is fixed.
+    for note in plan.mismatches():
+        st.error(note)
+
 
 def default_plan() -> ModelPlan:
     ready = available_providers()
     preferred = get_secret("DEFAULT_PROVIDER", DEFAULT_PROVIDER)
     provider = preferred if preferred in ready else (ready[0] if ready else "openai")
+    # INTERVIEWER_MODEL / CONTROL_MODEL are provider-agnostic strings, so they are
+    # resolved against the provider actually in use rather than trusted blindly.
     return ModelPlan(
         interviewer_provider=provider,
-        interviewer_model=get_secret("INTERVIEWER_MODEL", "") or DEFAULT_MODELS.get(provider, ""),
+        interviewer_model=resolve_model(provider, get_secret("INTERVIEWER_MODEL", "") or ""),
         control_provider=provider,
-        control_model=get_secret("CONTROL_MODEL", "") or DEFAULT_MODELS.get(provider, ""),
+        control_model=resolve_model(provider, get_secret("CONTROL_MODEL", "") or ""),
         analysis_provider=provider,
-        analysis_model=get_secret("CONTROL_MODEL", "") or DEFAULT_MODELS.get(provider, ""),
+        analysis_model=resolve_model(provider, get_secret("CONTROL_MODEL", "") or ""),
     )
+
+
+# ------------------------------------------------------------------ preflight
+
+
+@st.cache_resource(show_spinner=False)
+def _preflight_once(provider: str, model: str) -> tuple:
+    """One real call per (provider, model), shared by every page load.
+
+    Cached at resource scope so an event's worth of participants costs one call,
+    not one each.
+    """
+    return llm.preflight(provider, model)
+
+
+def station_ready(plan: ModelPlan) -> tuple:
+    """Is this station fit to collect data? Returns (ok, reason).
+
+    Checked before the consent gate, because the alternative is finding out from
+    a participant. A station that cannot reach its model can still *run* -- every
+    turn has a scripted fallback -- but a fully scripted interview is not the
+    intervention under test, so it must not be pooled with sessions that are.
+    """
+    if str(get_secret("PREFLIGHT", "on")).strip().lower() in ("off", "0", "false", "no"):
+        return True, "Preflight disabled by configuration."
+    if not available_providers():
+        return False, "No provider has an API key. " + "; ".join(
+            PROVIDER_LABELS[p] + ": " + missing_reason(p) for p in PROVIDER_LABELS
+        )
+    ok, reason = _preflight_once(plan.interviewer_provider, plan.interviewer_model)
+    if not ok:
+        return False, plan.interviewer_provider + "/" + plan.interviewer_model + " -- " + reason
+    if (plan.control_provider, plan.control_model) != (plan.interviewer_provider, plan.interviewer_model):
+        ok, reason = _preflight_once(plan.control_provider, plan.control_model)
+        if not ok:
+            return False, plan.control_provider + "/" + plan.control_model + " -- " + reason
+    return True, reason
+
+
+def render_not_ready(reason: str) -> None:
+    """The screen a participant gets instead of a broken interview.
+
+    Calm and non-technical for them; the detail is one click away for whoever is
+    running the stand, because that person is standing right there and the fix is
+    usually thirty seconds long.
+    """
+    ui.header("Computer Science Open Day", "This station is having a break")
+    st.info(
+        "Our survey assistant is not reachable at the moment, so we are not "
+        "collecting responses here right now. Sorry about that -- do please come "
+        "back shortly, or try another station."
+    )
+    with st.expander("Researcher: what is wrong"):
+        st.error(reason)
+        st.write("**" + llm.explain_failure(reason) + "**")
+        st.caption(
+            "Providers detected: "
+            + (", ".join(available_providers()) or "none")
+            + ". Configure keys in `.streamlit/secrets.toml`, then restart the app. "
+            "Set PREFLIGHT = \"off\" only to demonstrate the interface without collecting data."
+        )
 
 
 # ------------------------------------------------------------------ start-up
@@ -354,6 +444,13 @@ def begin_session(policy: dict, record: consent.ConsentRecord) -> None:
             "reprobe_count": 0,
             "turn_index": 0,
             "pending_control": _opening_instruction(policy, arm),
+            # What the participant sees if that very first call fails. Pressing
+            # "Begin" must never produce an error message.
+            "pending_fallback": _opening_fallback(policy, arm),
+            "scripted_turns": 0,
+            # Distinct questions asked, as opposed to replies received. See
+            # `_advance_freeform` for why the two must not be the same counter.
+            "topics_asked": 1,
             "interview_started_at": time.perf_counter(),
             "why_hint": "",
         }
@@ -373,6 +470,28 @@ def _opening_instruction(policy: dict, arm: arms.Arm) -> str:
         "CONTROL: This is the first turn. Greet the participant in one short sentence, say roughly "
         "how long this will take, then ask your first question."
     )
+
+
+def _opening_fallback(policy: dict, arm: arms.Arm) -> str:
+    """The welcome the participant sees if the opening model call fails.
+
+    Everything in it is known from the policy alone, so it costs no model call and
+    cannot itself fail. The graph arms open on the root node's own question; the
+    free-form arms open on the first core topic, which is the same content without
+    the ordering guarantee.
+    """
+    minutes = int(round(float(policy.get("target_minutes", 5))))
+    greeting = (
+        "Thanks for taking part -- this will take about "
+        + str(minutes)
+        + " minutes, and there are no right answers.\n\n"
+    )
+    if arm.uses_policy_graph:
+        node = schema.get_node(policy, policy["root_id"]) or {}
+        return greeting + (node.get("question", "") or "How have you found the open day so far?")
+    core = schema.core_nodes(policy)
+    first = (schema.get_node(policy, core[0]) or {}).get("question", "") if core else ""
+    return greeting + (first or "How have you found the open day so far?")
 
 
 def freeform_topics(policy: dict) -> list:
@@ -415,7 +534,7 @@ def generate_interviewer_turn(policy: dict) -> None:
             "target_minutes": policy.get("target_minutes", 5),
         }
 
-    text, _ = agents.ask_interviewer(
+    text, result = agents.ask_interviewer(
         log,
         plan,
         system_prompt=system_prompt,
@@ -423,11 +542,19 @@ def generate_interviewer_turn(policy: dict) -> None:
         history=list(st.session_state["messages"]),
         control_instruction=st.session_state.get("pending_control", ""),
         node_id=st.session_state.get("node_id", ""),
+        fallback=st.session_state.get("pending_fallback", ""),
     )
+
+    if getattr(result, "substituted", False):
+        # Counted for the session, not just logged per turn: a session that ran
+        # half-scripted is a different object from one that did not, and the
+        # decision to keep or drop it belongs to whoever analyses the data.
+        st.session_state["scripted_turns"] = st.session_state.get("scripted_turns", 0) + 1
 
     st.session_state["messages"].append({"role": "assistant", "content": text})
     log.add_message("assistant", text)
     st.session_state["pending_control"] = ""
+    st.session_state["pending_fallback"] = ""
     st.session_state["question_shown_at"] = time.perf_counter()
     st.session_state["why_hint"] = ""
 
@@ -435,7 +562,7 @@ def generate_interviewer_turn(policy: dict) -> None:
 # --------------------------------------------------------------- the main loop
 
 
-def handle_reply(policy: dict, reply: str, *, via_voice: bool = False) -> None:
+def handle_reply(policy: dict, reply: str, *, via_voice: bool = False, asr: dict = None) -> None:
     """Everything that happens between the participant pressing send and the next question."""
     log: SessionLog = st.session_state["log"]
     plan: ModelPlan = st.session_state["plan"]
@@ -466,6 +593,10 @@ def handle_reply(policy: dict, reply: str, *, via_voice: bool = False) -> None:
             "reprobe_index": reprobe_count,
             "reply_latency_s": latency,
             "input_mode": "voice" if via_voice else "text",
+            # Which speech-to-text engine produced this turn, if any. A spoken
+            # answer has been through a second model before the interviewer ever
+            # sees it, so its wording is not purely the participant's.
+            **(asr or {"asr_provider": "", "asr_model": ""}),
             **metrics,
         },
     )
@@ -482,6 +613,10 @@ def handle_reply(policy: dict, reply: str, *, via_voice: bool = False) -> None:
         "reprobe_index": reprobe_count,
         "reply_latency_s": latency,
         "input_mode": "voice" if via_voice else "text",
+        "asr_provider": (asr or {}).get("asr_provider", ""),
+        "asr_model": (asr or {}).get("asr_model", ""),
+        "asr_fell_back": (asr or {}).get("asr_fell_back", ""),
+        "asr_attempts": (asr or {}).get("asr_attempts", ""),
         "t_elapsed_s": log.elapsed(),
     }
     turn_row.update({"reply_" + k: v for k, v in metrics.items()})
@@ -531,6 +666,11 @@ def handle_reply(policy: dict, reply: str, *, via_voice: bool = False) -> None:
                 + (verdict["missing"] or "the point of the question")
                 + ". Acknowledge briefly what they did say, then ask once for that one thing. "
                 + (verdict["suggested_probe"] or "")
+            )
+            st.session_state["pending_fallback"] = (verdict["suggested_probe"] or "").strip() or (
+                "Thanks. Could you say a little more about " 
+                + (verdict["missing"] or "that") 
+                + "?"
             )
             log.log(
                 EV_REPROBE,
@@ -605,6 +745,10 @@ def advance(policy: dict) -> None:
         + node.get("objective", "")
         + ". Do not ask anything else."
     )
+    # The graph arms can fall back to the node's own wording, because that wording
+    # is what the arm is defined by. The free-form arms deliberately cannot -- see
+    # `_advance_freeform`.
+    st.session_state["pending_fallback"] = node.get("question", "")
     generate_interviewer_turn(policy)
 
 
@@ -633,21 +777,36 @@ def _skip_optional_when_over_budget(policy: dict, next_id, log: SessionLog):
 
 
 def _advance_freeform(policy: dict) -> None:
-    """Free-form arms end on turn count or time, whichever comes first."""
+    """Free-form arms end on question count or time, whichever comes first.
+
+    The count is of *distinct questions asked*, not of replies received. Those two
+    diverge exactly when the adequacy checker fires: a re-probe is a second reply
+    to the same question. Ending on replies would therefore have spent arm C's
+    budget on re-probes and left it fewer topics than arm D -- making the
+    governance factor a topic-exposure manipulation as well as a governance one,
+    and confounding the very contrast the 2x2 exists to draw. Arm A has never had
+    this problem, because a re-probe in a graph arm does not consume a node.
+    """
     log: SessionLog = st.session_state["log"]
     # Matched to the graph arms' core spine so exposure is comparable across arms.
-    max_turns = max(4, len(schema.core_nodes(policy)))
+    max_topics = max(4, len(schema.core_nodes(policy)))
     budget_s = float(policy.get("target_minutes", 5)) * 60.0
     elapsed = time.perf_counter() - st.session_state.get("interview_started_at", time.perf_counter())
+    asked = st.session_state.get("topics_asked", 1)
 
-    if st.session_state["turn_index"] >= max_turns or elapsed > budget_s:
+    if asked >= max_topics or elapsed > budget_s:
         finish_interview(policy)
         return
 
+    st.session_state["topics_asked"] = asked + 1
     st.session_state["pending_control"] = (
         "CONTROL: Continue the interview. Ask your next question, covering a topic you have not "
         "yet covered."
     )
+    # Deliberately generic. Falling back to the policy's scripted question here
+    # would hand a free-form participant the graph's own content and quietly turn
+    # arm C or D into arm A or B for that turn.
+    st.session_state["pending_fallback"] = "Thanks. What else stood out to you today, and why?"
     generate_interviewer_turn(policy)
 
 
@@ -659,6 +818,7 @@ def finish_interview(policy: dict) -> None:
         "CONTROL: The survey is complete. Thank the participant in one short sentence. "
         "Do not ask another question."
     )
+    st.session_state["pending_fallback"] = "That is everything -- thank you for taking part."
     generate_interviewer_turn(policy)
 
     transcript = log.transcript_text()
@@ -716,8 +876,8 @@ def render_interview(policy: dict) -> None:
         done = len(st.session_state["visited"])
         fraction = done / max(1, done + remaining)
     else:
-        max_turns = max(4, len(schema.core_nodes(policy)))
-        fraction = min(1.0, st.session_state["turn_index"] / max_turns)
+        max_topics = max(4, len(schema.core_nodes(policy)))
+        fraction = min(1.0, st.session_state.get("topics_asked", 1) / max_topics)
     ui.progress_bar(fraction, "About " + str(max(1, int(round((1 - fraction) * 100)))) + "% to go")
 
     ui.render_chat(st.session_state["messages"])
@@ -757,17 +917,45 @@ def render_interview(policy: dict) -> None:
         finish_interview(policy)
         st.rerun()
 
+    # Speaking is a minority path -- a handful of participants at an event, not the
+    # expected way in -- so it stays folded shut beneath the text box rather than
+    # competing with it. Typing is the default and always works; nothing below is
+    # ever required to answer a question.
     if st.session_state.get("allow_voice") and speech.transcription_available():
-        audio = st.audio_input("Or speak your answer", label_visibility="visible")
-        if audio is not None and not st.session_state.get("voice_consumed"):
-            text, error = speech.transcribe(audio.read())
-            st.session_state["voice_consumed"] = True
-            if text:
-                handle_reply(policy, text, via_voice=True)
-                st.session_state["voice_consumed"] = False
-                st.rerun()
-            elif error:
-                st.warning("We could not hear that clearly -- please type your answer. (" + error + ")")
+        with st.expander("Rather speak than type?", expanded=False):
+            st.caption(
+                "Record your answer and we will write it down for you. "
+                "The tool never speaks back -- everything stays on screen."
+            )
+            # Keyed per turn so each question gets an empty recorder. Without this
+            # the widget keeps the previous recording across reruns and would
+            # re-submit last turn's answer.
+            audio = st.audio_input(
+                "Record your answer",
+                key="voice_%d" % st.session_state["turn_index"],
+                label_visibility="collapsed",
+            )
+            # Guard on the audio itself, not on the widget: a rerun hands back the
+            # same recording (transcribe once), while a re-record hands back
+            # different bytes (transcribe again, because they asked for it).
+            if audio is not None:
+                data = audio.read()
+                digest = hashlib.sha1(data).hexdigest()
+                if st.session_state.get("voice_digest") != digest:
+                    st.session_state["voice_digest"] = digest
+                    st.session_state["voice_error"] = ""
+                    with st.spinner("Writing that down..."):
+                        text, error, provenance = speech.transcribe(data)
+                    if text:
+                        handle_reply(policy, text, via_voice=True, asr=provenance)
+                        st.rerun()
+                    else:
+                        st.session_state["voice_error"] = error
+                if st.session_state.get("voice_error"):
+                    st.warning(
+                        "We could not make that out -- please type your answer instead."
+                    )
+                    st.caption(st.session_state["voice_error"])
 
     if reply:
         handle_reply(policy, reply)
@@ -873,6 +1061,14 @@ def main() -> None:
         for error in report.errors:
             st.write("- " + error)
         st.stop()
+
+    # Before consent, not after: a participant should never be asked to agree to
+    # take part in something that cannot run.
+    if "log" not in st.session_state:
+        ready, reason = station_ready(st.session_state.get("plan") or default_plan())
+        if not ready:
+            render_not_ready(reason)
+            st.stop()
 
     minutes = int(round(float(policy.get("target_minutes", 5))))
     record = consent.consent_gate(

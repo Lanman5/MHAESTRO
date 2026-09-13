@@ -84,6 +84,12 @@ class LLMResult:
     # "json_schema"]. Recorded per turn: the model configuration is a study
     # variable, so a silently degraded request must not stay silent.
     degraded: List[str] = field(default_factory=list)
+    # Set by a caller that had to show the participant scripted text because this
+    # call produced nothing usable. Not a property of the call itself, which is
+    # why it defaults False and is written from outside -- but it belongs on the
+    # same object so it reaches the log by the same route as every other fact
+    # about the turn.
+    substituted: bool = False
 
     @property
     def output_chars(self) -> int:
@@ -243,6 +249,38 @@ _EFFORT_CAPABLE = (
 
 def supports_effort(model: str) -> bool:
     return any((model or "").startswith(prefix) for prefix in _EFFORT_CAPABLE)
+
+
+def model_belongs_to(model: str) -> Optional[str]:
+    """The provider whose catalogue lists this model, if any."""
+    for provider, models in MODEL_CATALOGUE.items():
+        if model in models:
+            return provider
+    return None
+
+
+def resolve_model(provider: str, model: str) -> str:
+    """Return a model id that can actually be used with `provider`.
+
+    `INTERVIEWER_MODEL` and `CONTROL_MODEL` are provider-agnostic strings, and the
+    provider can be changed independently of them -- in the sidebar, or by editing
+    `DEFAULT_PROVIDER`. Nothing previously stopped the two being combined into a
+    pairing like `anthropic/gpt-4o`, which is not a slow or degraded
+    configuration but a dead one: every call 404s and every turn shows the
+    participant an apology.
+
+    A model listed in a *different* provider's catalogue is therefore treated as a
+    mistake and replaced with this provider's default. A model in no catalogue is
+    passed through untouched -- that is how a newly released model id reaches the
+    provider.
+    """
+    if not model:
+        return DEFAULT_MODELS.get(provider, "")
+    if model in MODEL_CATALOGUE.get(provider, []):
+        return model
+    if model_belongs_to(model) is not None:
+        return DEFAULT_MODELS.get(provider, "")
+    return model
 
 
 # ------------------------------------------------------- capability negotiation
@@ -667,3 +705,68 @@ def _call_gemini(result, messages, model, as_json, json_schema, max_tokens, temp
     if candidates:
         finish = getattr(candidates[0], "finish_reason", None)
         result.finish_reason = str(finish) if finish is not None else None
+
+
+# ----------------------------------------------------------------- preflight
+#
+# An exhausted or revoked API key is indistinguishable, from inside a session,
+# from a model that happens to be slow: both surface as a failed call, and the
+# participant is shown an apology while the reason sits in an event log nobody
+# reads until the evening. At an event that is the difference between losing one
+# participant and losing the whole morning.
+#
+# So the key is tested once, before anybody is allowed to start, with the
+# cheapest call the provider offers.
+
+_PREFLIGHT: Dict[Tuple[str, str], Tuple[bool, str]] = {}
+
+
+def preflight(provider: str, model: str, *, timeout: float = 20.0, refresh: bool = False) -> Tuple[bool, str]:
+    """Make one minimal real call. Returns (ok, reason).
+
+    Cached per (provider, model) for the life of the process: this runs on page
+    load, and an open day is a few hundred page loads.
+    """
+    key = (provider, model or "")
+    if not refresh and key in _PREFLIGHT:
+        return _PREFLIGHT[key]
+
+    if not has_secret(PROVIDER_KEY_NAMES.get(provider, "")):
+        outcome = (False, missing_reason(provider))
+    elif _import_sdk(provider) is None:
+        outcome = (False, missing_reason(provider))
+    else:
+        result = complete(
+            [{"role": "user", "content": "Reply with the single word: ok"}],
+            provider=provider,
+            model=model,
+            max_tokens=1000,
+            timeout=timeout,
+        )
+        if result.ok and (result.text or "").strip():
+            outcome = (True, str(result.latency_ms) + " ms")
+        else:
+            outcome = (False, result.error or "The model returned an empty response.")
+
+    _PREFLIGHT[key] = outcome
+    return outcome
+
+
+def explain_failure(reason: str) -> str:
+    """Turn a provider error into the one action that fixes it.
+
+    The provider's own message is accurate and unreadable at a stand with someone
+    waiting. These are the failures that actually happen.
+    """
+    text = (reason or "").lower()
+    if "credit" in text or "quota" in text or "billing" in text or "429" in text:
+        return "This API key has no credit left. Top it up, or switch to a provider whose key does."
+    if "api key" in text or "authentication" in text or "401" in text or "invalid_api_key" in text:
+        return "This API key was rejected. Check it is current and pasted in full."
+    if "not found" in text or "404" in text or "does not exist" in text:
+        return "This model id does not exist for this provider. Pick one from the list."
+    if "permission" in text or "403" in text:
+        return "This key is not permitted to use this model."
+    if "timeout" in text or "timed out" in text or "connection" in text:
+        return "The provider could not be reached. Check the network."
+    return "Fix the provider configuration before running the study."
