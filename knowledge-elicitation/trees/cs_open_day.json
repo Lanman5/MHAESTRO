@@ -1,177 +1,413 @@
 {
   "schema_version": "mhaestro-policy-2",
-  "survey_id": "cs_open_day",
-  "title": "Computer Science Open Day",
-  "description": "the Computer Science Open Day activities you have just taken part in",
-  "scope_note": "Scope: the activities the visitor took part in today, what worked, what did not, and what they would change. Out of scope: admissions decisions, entry requirements, fees, accommodation, and anything about a named member of staff. If a visitor raises one of those, say briefly that a member of staff at the stand can help with it and return to the question in hand.",
-  "steering_note": "Steer towards the specific activities and moments the visitor experienced, not their general impressions of the university. If an answer is about the campus, the city or the course in the abstract, acknowledge it in a few words and ask about what they actually did today. Never suggest an activity they have not mentioned, and never imply a right answer about whether something was good.",
-  "target_minutes": 5,
+  "survey_id": "cs_open_days_sept_2026",
+  "title": "Computer Science Open Days September 2026 Feedback",
+  "description": "Collect feedback from visitors and staff on their experiences at the Computer Science Open Days to inform improvements to future events.",
+  "scope_note": "This survey branches immediately into separate paths for visitors (prospective students or parents) and staff. For visitors: capture which activities they experienced, their feelings about activities and reasons, unmet expectations, and their understanding of CS study. For staff: capture which activities they helped with, how smoothly they ran, sufficiency of training and support, and suggestions for improvement. Do not ask visitors about staff logistics or vice versa.",
+  "steering_note": "For visitors with strong feelings: let them lead on depth — accept brief answers like 'boring' and follow up with 'what could have made it better?' rather than requiring detailed explanation upfront. For staff: ask about each activity type they mention before moving to training and support. Do not prompt suggestions for improvement until they've indicated insufficient training or support.",
+  "target_minutes": 5.0,
   "summary_questions": [
-    "Which Open Day activities you took part in, and how the day went overall",
-    "What you found most useful or enjoyable, and why",
-    "What did not work as well for you",
-    "What you would keep, change or add for next time"
+    "Which open day activities did you experience or help with?",
+    "What were your strong feelings about those activities, and what caused them?",
+    "For staff: was your training and support sufficient, and what would have helped? For visitors: did the open day increase your understanding of Computer Science study?"
   ],
-  "root_id": "ask_activities",
-  "nodes": [
-    {
-      "id": "ask_activities",
-      "question": "Which activities did you take part in or have a look at today?",
-      "objective": "Names at least one specific Open Day activity the visitor experienced.",
+  "root_id": "respondent_type",
+  "nodes": {
+    "respondent_type": {
+      "id": "respondent_type",
+      "question": "Are you visiting the open day, or are you staff helping to run it?",
+      "objective": "Identifies whether respondent is a visitor or staff member to route to appropriate branch.",
       "priority": "core",
-      "topic": "Activities attended",
-      "max_reprobes": 1,
+      "topic": "respondent_classification",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 0
+      },
       "children": [
         {
-          "condition": "named_specific_activities",
-          "target_id": "ask_overall",
-          "description": "The visitor named one or more identifiable activities."
+          "condition": "visitor",
+          "target_id": "visitor_type",
+          "description": "Respondent is attending as a visitor."
         },
         {
-          "condition": "vague_or_nothing_named",
-          "target_id": "ask_overall",
-          "description": "The visitor answered but did not identify any particular activity."
-        },
-        {
-          "condition": "other_or_unclear",
-          "target_id": "ask_overall",
-          "description": "Anything else, including a refusal or an off-topic answer."
+          "condition": "staff",
+          "target_id": "staff_activities_intro",
+          "description": "Respondent is staff helping to run the open day."
         }
       ]
     },
-    {
-      "id": "ask_overall",
-      "question": "How was the day overall for you?",
-      "objective": "Gives an overall evaluation of the day and some indication of what shaped it.",
+    "visitor_type": {
+      "id": "visitor_type",
+      "question": "Are you a prospective student or a parent?",
+      "objective": "Classifies visitor as prospective student or parent to understand their perspective.",
       "priority": "core",
-      "topic": "Overall experience",
-      "max_reprobes": 1,
+      "topic": "visitor_classification",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 0
+      },
       "children": [
         {
-          "condition": "clear_view_with_reason",
-          "target_id": "ask_liked_most",
-          "description": "The visitor gave an overall view and said something about why."
+          "condition": "prospective_student",
+          "target_id": "visitor_activities_experienced",
+          "description": "Respondent is a prospective student."
         },
         {
-          "condition": "view_without_reason",
-          "target_id": "probe_stood_out",
-          "description": "The visitor gave an overall view but nothing about what shaped it."
-        },
-        {
-          "condition": "other_or_unclear",
-          "target_id": "probe_stood_out",
-          "description": "Anything else, including a non-committal answer."
+          "condition": "parent",
+          "target_id": "visitor_activities_experienced",
+          "description": "Respondent is a parent attending."
         }
       ]
     },
-    {
-      "id": "probe_stood_out",
-      "question": "Was there a particular moment or activity that stood out, good or bad?",
-      "objective": "Identifies at least one concrete moment from the day.",
+    "visitor_activities_experienced": {
+      "id": "visitor_activities_experienced",
+      "question": "Which of the open day activities did you experience today? The activities include presentations, tours, Robot Dogs, VR and Smart Glasses, and student internship projects.",
+      "objective": "Respondent names at least one activity they took part in or attended.",
+      "priority": "core",
+      "topic": "activities_attended",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "named_activities",
+          "target_id": "visitor_strong_feelings",
+          "description": "Respondent names one or more activities they experienced."
+        },
+        {
+          "condition": "no_activities",
+          "target_id": "visitor_unmet_expectations",
+          "description": "Respondent did not experience any activities or is unsure."
+        }
+      ]
+    },
+    "visitor_strong_feelings": {
+      "id": "visitor_strong_feelings",
+      "question": "Which of those activities did you have strong feelings about — either really liked or really disliked?",
+      "objective": "Respondent names at least one activity they had a strong opinion about.",
+      "priority": "core",
+      "topic": "strong_feelings",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "named_strong_feelings",
+          "target_id": "visitor_feelings_why",
+          "description": "Respondent identifies one or more activities they felt strongly about."
+        },
+        {
+          "condition": "no_strong_feelings",
+          "target_id": "visitor_unmet_expectations",
+          "description": "Respondent had neutral feelings about all activities or didn't want to elaborate."
+        }
+      ]
+    },
+    "visitor_feelings_why": {
+      "id": "visitor_feelings_why",
+      "question": "Why did you feel that way about it? What stood out?",
+      "objective": "Respondent gives at least one reason for their strong feeling — whether a brief label like 'boring' or a more detailed explanation.",
+      "priority": "core",
+      "topic": "activity_feedback",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "gave_reason",
+          "target_id": "visitor_improve_activity",
+          "description": "Respondent explains what they liked or disliked."
+        },
+        {
+          "condition": "no_reason_given",
+          "target_id": "visitor_improve_activity",
+          "description": "Respondent unable or unwilling to explain further."
+        }
+      ]
+    },
+    "visitor_improve_activity": {
+      "id": "visitor_improve_activity",
+      "question": "Is there anything you would change about those activities, or anything that could have made the experience better?",
+      "objective": "Respondent suggests at least one improvement, or explicitly states they would not change anything.",
       "priority": "optional",
-      "topic": "Overall experience",
-      "max_reprobes": 0,
+      "topic": "activity_feedback",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
       "children": [
         {
-          "condition": "continue",
-          "target_id": "ask_liked_most",
-          "description": "Always continues to the next core question."
+          "condition": "suggested_change",
+          "target_id": "visitor_other_activities_feedback",
+          "description": "Respondent offers a suggestion for improvement."
+        },
+        {
+          "condition": "no_change_needed",
+          "target_id": "visitor_other_activities_feedback",
+          "description": "Respondent feels activities were fine as they were."
         }
       ]
     },
-    {
-      "id": "ask_liked_most",
-      "question": "Which part did you find most useful or most enjoyable?",
-      "objective": "Names a specific activity or aspect and gives at least one reason it was useful or enjoyable.",
-      "priority": "core",
-      "topic": "What worked well",
-      "max_reprobes": 1,
-      "children": [
-        {
-          "condition": "named_with_reason",
-          "target_id": "ask_improve",
-          "description": "Named something and said why it worked for them."
-        },
-        {
-          "condition": "named_without_reason",
-          "target_id": "probe_why_useful",
-          "description": "Named something but did not say why."
-        },
-        {
-          "condition": "nothing_stood_out",
-          "target_id": "ask_improve",
-          "description": "Nothing in particular stood out as useful or enjoyable."
-        },
-        {
-          "condition": "other_or_unclear",
-          "target_id": "ask_improve",
-          "description": "Anything else."
-        }
-      ]
-    },
-    {
-      "id": "probe_why_useful",
-      "question": "What was it about that one that worked for you?",
-      "objective": "Gives at least one reason the named activity was useful or enjoyable.",
+    "visitor_other_activities_feedback": {
+      "id": "visitor_other_activities_feedback",
+      "question": "For the other activities you tried but didn't feel strongly about, do you have any comments or feedback?",
+      "objective": "Respondent provides comments on remaining activities, or indicates none are needed.",
       "priority": "optional",
-      "topic": "What worked well",
-      "max_reprobes": 0,
+      "topic": "activity_feedback",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
       "children": [
         {
-          "condition": "continue",
-          "target_id": "ask_improve",
-          "description": "Always continues to the next core question."
-        }
-      ]
-    },
-    {
-      "id": "ask_improve",
-      "question": "Was there anything that did not work so well, or that you expected to see and didn't?",
-      "objective": "Identifies something that fell short, or states clearly that nothing did.",
-      "priority": "core",
-      "topic": "What did not work",
-      "max_reprobes": 1,
-      "children": [
-        {
-          "condition": "named_a_problem_or_gap",
-          "target_id": "ask_suggestions",
-          "description": "Named something that disappointed them or was missing."
+          "condition": "gave_feedback",
+          "target_id": "visitor_unmet_expectations",
+          "description": "Respondent comments on other activities."
         },
         {
-          "condition": "nothing_negative",
-          "target_id": "ask_suggestions",
-          "description": "Said nothing fell short."
-        },
-        {
-          "condition": "other_or_unclear",
-          "target_id": "ask_suggestions",
-          "description": "Anything else."
+          "condition": "no_feedback",
+          "target_id": "visitor_unmet_expectations",
+          "description": "Respondent has no further feedback."
         }
       ]
     },
-    {
-      "id": "ask_suggestions",
-      "question": "If you were helping us plan the next one, what would you keep, change or add?",
-      "objective": "Gives at least one concrete suggestion, or says clearly they would not change anything.",
+    "visitor_unmet_expectations": {
+      "id": "visitor_unmet_expectations",
+      "question": "Was there anything you expected or hoped to see or experience at the open day that wasn't available?",
+      "objective": "Respondent identifies unmet expectations or confirms they saw what they wanted.",
       "priority": "core",
-      "topic": "Suggestions for next time",
-      "max_reprobes": 1,
+      "topic": "unmet_expectations",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
       "children": [
         {
-          "condition": "continue",
-          "target_id": "ask_anything_else",
-          "description": "Always continues to the closing question."
+          "condition": "had_unmet_expectation",
+          "target_id": "visitor_cs_understanding",
+          "description": "Respondent names something they hoped to see but didn't."
+        },
+        {
+          "condition": "no_unmet_expectation",
+          "target_id": "visitor_cs_understanding",
+          "description": "Respondent's expectations were met or they had none."
         }
       ]
     },
-    {
-      "id": "ask_anything_else",
-      "question": "Last one: anything else about today you'd like us to know?",
-      "objective": "Either adds something new or confirms there is nothing further.",
+    "visitor_cs_understanding": {
+      "id": "visitor_cs_understanding",
+      "question": "Do you feel today's open day increased your understanding of what studying Computer Science is like?",
+      "objective": "Respondent indicates whether the open day expanded their knowledge of CS study.",
+      "priority": "optional",
+      "topic": "cs_understanding",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 0
+      },
+      "children": [
+        {
+          "condition": "increased_understanding",
+          "target_id": "visitor_application_likelihood",
+          "description": "Respondent feels they learned more about CS study."
+        },
+        {
+          "condition": "no_change_understanding",
+          "target_id": "visitor_application_likelihood",
+          "description": "Respondent's understanding was unchanged."
+        },
+        {
+          "condition": "decreased_understanding",
+          "target_id": "visitor_application_likelihood",
+          "description": "Respondent feels their understanding was clarified negatively."
+        }
+      ]
+    },
+    "visitor_application_likelihood": {
+      "id": "visitor_application_likelihood",
+      "question": "Has today's open day helped you make your mind up about applying to study Computer Science, and how likely do you think you are to apply?",
+      "objective": "Respondent indicates their current likelihood to apply and whether the day moved them toward a decision.",
+      "priority": "optional",
+      "topic": "application_intent",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 0
+      },
+      "children": [
+        {
+          "condition": "likely_to_apply",
+          "target_id": "visitor_end",
+          "description": "Respondent indicates they are likely or more likely to apply."
+        },
+        {
+          "condition": "unlikely_to_apply",
+          "target_id": "visitor_end",
+          "description": "Respondent indicates they are unlikely to apply."
+        },
+        {
+          "condition": "still_undecided",
+          "target_id": "visitor_end",
+          "description": "Respondent remains undecided about applying."
+        }
+      ]
+    },
+    "visitor_end": {
+      "id": "visitor_end",
+      "question": "Thank you for your feedback today.",
+      "objective": "Gracefully close the visitor interview.",
       "priority": "core",
-      "topic": "Anything else",
-      "max_reprobes": 0,
+      "topic": "closing",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 0
+      },
+      "children": []
+    },
+    "staff_activities_intro": {
+      "id": "staff_activities_intro",
+      "question": "Which activities did you help with or experience today? This could include presentations, tours, demos and activities like Robot Dogs or VR and Smart Glasses, or student internship projects.",
+      "objective": "Respondent names at least one activity type they were involved in or witnessed.",
+      "priority": "core",
+      "topic": "activities_involved",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "named_activities",
+          "target_id": "staff_activity_smoothness",
+          "description": "Respondent identifies one or more activities they helped with."
+        },
+        {
+          "condition": "no_activities",
+          "target_id": "staff_end",
+          "description": "Respondent was not directly involved in activities."
+        }
+      ]
+    },
+    "staff_activity_smoothness": {
+      "id": "staff_activity_smoothness",
+      "question": "For those activities, how did things go? Did they run smoothly, or were there challenges?",
+      "objective": "Respondent describes whether each activity or overall operation ran smoothly and names any challenges encountered.",
+      "priority": "core",
+      "topic": "activity_execution",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "ran_smoothly",
+          "target_id": "staff_training_sufficiency",
+          "description": "Activities ran smoothly or mostly smoothly."
+        },
+        {
+          "condition": "had_challenges",
+          "target_id": "staff_training_sufficiency",
+          "description": "Respondent identifies one or more challenges."
+        }
+      ]
+    },
+    "staff_training_sufficiency": {
+      "id": "staff_training_sufficiency",
+      "question": "Do you feel you had sufficient training and support to help with those activities?",
+      "objective": "Respondent indicates whether they felt adequately prepared and supported.",
+      "priority": "core",
+      "topic": "training_and_support",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "sufficient_training",
+          "target_id": "staff_improve_experience",
+          "description": "Respondent felt adequately trained and supported."
+        },
+        {
+          "condition": "insufficient_training",
+          "target_id": "staff_suggest_training",
+          "description": "Respondent felt they lacked training or support."
+        }
+      ]
+    },
+    "staff_suggest_training": {
+      "id": "staff_suggest_training",
+      "question": "What training or support would have helped you? What do you think would have made your experience better?",
+      "objective": "Respondent suggests specific training, resources, or support that was missing.",
+      "priority": "core",
+      "topic": "training_improvements",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "made_suggestion",
+          "target_id": "staff_improve_experience",
+          "description": "Respondent suggests training or support improvements."
+        },
+        {
+          "condition": "unsure_or_vague",
+          "target_id": "staff_improve_experience",
+          "description": "Respondent unable to specify improvements."
+        }
+      ]
+    },
+    "staff_improve_experience": {
+      "id": "staff_improve_experience",
+      "question": "How do you think your overall experience helping with the open day could be improved?",
+      "objective": "Respondent offers at least one suggestion for improving the staff experience, or indicates they were satisfied.",
+      "priority": "optional",
+      "topic": "staff_experience_improvement",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "made_suggestion",
+          "target_id": "staff_end",
+          "description": "Respondent suggests improvements."
+        },
+        {
+          "condition": "no_suggestion",
+          "target_id": "staff_end",
+          "description": "Respondent satisfied with experience as-is."
+        }
+      ]
+    },
+    "staff_end": {
+      "id": "staff_end",
+      "question": "Thank you for helping to make the open day a success.",
+      "objective": "Gracefully close the staff interview.",
+      "priority": "core",
+      "topic": "closing",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 0
+      },
       "children": []
     }
-  ]
+  }
 }
