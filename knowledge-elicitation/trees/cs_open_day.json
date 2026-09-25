@@ -1,0 +1,160 @@
+{
+  "schema_version": "mhaestro-policy-2",
+  "survey_id": "dhs_freshers_bazaar_2026",
+  "title": "Digital Human Society Stand Feedback",
+  "description": "Gather feedback on activities, likes, dislikes, and improvement suggestions for the Digital Human Society stand at Freshers Bazaar September 2026.",
+  "scope_note": "Focus exclusively on the respondent's experience at the Digital Human Society stand. Do not probe other stands or the students' union in detail. If the respondent mentions other stands, acknowledge briefly but redirect to DHS stand experience. Avoid leading questions about what should change; let them volunteer suggestions.",
+  "steering_note": "Open with a concrete, low-effort recall question about what they did at the stand. If they mention only likes, gently ask about dislikes (and vice versa) in follow-up. If they focus on projects, dig into project feedback; if they focus on committee interactions, explore that; if other activities, follow that thread. Keep the respondent focused on their own experience at the DHS stand.",
+  "target_minutes": 4.0,
+  "summary_questions": [
+    "What specific activities did you participate in at the Digital Human Society stand?",
+    "What did you like and dislike about your experience at the stand?",
+    "What would you like to see at the Digital Human Society stand in future events?"
+  ],
+  "root_id": "activities_today",
+  "nodes": {
+    "activities_today": {
+      "id": "activities_today",
+      "question": "What activities did you take part in at the Digital Human Society stand today?",
+      "objective": "Names at least one specific activity, such as viewing projects, speaking with committee members, or other hands-on engagement at the DHS stand.",
+      "priority": "core",
+      "topic": "activities_attended",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "named_specific_activities",
+          "target_id": "stand_experience",
+          "description": "Respondent named one or more specific activities at the DHS stand."
+        }
+      ]
+    },
+    "stand_experience": {
+      "id": "stand_experience",
+      "question": "What was your experience at our stand?",
+      "objective": "Respondent describes at least one aspect of their experienceâpositive, negative, or bothâat the DHS stand.",
+      "priority": "core",
+      "topic": "likes_and_dislikes",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "mentioned_both_likes_and_dislikes",
+          "target_id": "future_suggestions",
+          "description": "Respondent has volunteered both what they liked and what they disliked."
+        },
+        {
+          "condition": "mentioned_only_likes",
+          "target_id": "probe_dislikes",
+          "description": "Respondent has mentioned only positive aspects or liked everything."
+        },
+        {
+          "condition": "mentioned_only_dislikes",
+          "target_id": "probe_likes",
+          "description": "Respondent has mentioned only negative aspects or dislikes."
+        },
+        {
+          "condition": "vague_or_unclear",
+          "target_id": "probe_dislikes",
+          "description": "Respondent's answer is too vague to determine what they liked or disliked."
+        }
+      ]
+    },
+    "probe_dislikes": {
+      "id": "probe_dislikes",
+      "question": "Was there anything at our stand that didn't work as well or that you'd like to have seen done differently?",
+      "objective": "Respondent names at least one specific dislike or area for improvement, ideally with a reason.",
+      "priority": "optional",
+      "topic": "likes_and_dislikes",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "named_dislike",
+          "target_id": "future_suggestions",
+          "description": "Respondent identified a specific dislike or improvement area."
+        },
+        {
+          "condition": "no_dislikes_mentioned",
+          "target_id": "future_suggestions",
+          "description": "Respondent confirms nothing needs to change or declines to name a dislike."
+        }
+      ]
+    },
+    "probe_likes": {
+      "id": "probe_likes",
+      "question": "What did you enjoy or find interesting about our stand?",
+      "objective": "Respondent names at least one specific thing they liked or appreciated.",
+      "priority": "optional",
+      "topic": "likes_and_dislikes",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "named_like",
+          "target_id": "future_suggestions",
+          "description": "Respondent identified a specific thing they liked."
+        },
+        {
+          "condition": "no_clear_likes",
+          "target_id": "future_suggestions",
+          "description": "Respondent could not identify anything they liked."
+        }
+      ]
+    },
+    "future_suggestions": {
+      "id": "future_suggestions",
+      "question": "What would you like to see at the Digital Human Society stand in future events?",
+      "objective": "Respondent names at least one concrete suggestion or preference for future events, ideally linked to what worked or didn't work in today's visit.",
+      "priority": "core",
+      "topic": "future_improvements",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 1
+      },
+      "children": [
+        {
+          "condition": "named_concrete_suggestion",
+          "target_id": "session_close",
+          "description": "Respondent gave one or more specific, concrete suggestions for improvements or additions."
+        },
+        {
+          "condition": "vague_or_generic",
+          "target_id": "session_close",
+          "description": "Respondent gave a vague answer or said everything is fine as is."
+        },
+        {
+          "condition": "no_suggestion",
+          "target_id": "session_close",
+          "description": "Respondent did not have suggestions."
+        }
+      ]
+    },
+    "session_close": {
+      "id": "session_close",
+      "question": "I'm going to read back what you've told me to make sure I've understood correctly. Does this accurately reflect what you said?",
+      "objective": "Respondent confirms that the summarised feedback on activities attended, likes and dislikes about the DHS stand, and suggestions for future events is accurate.",
+      "priority": "core",
+      "topic": "close",
+      "adequacy": {
+        "require_stance": true,
+        "require_reason": true,
+        "max_reprobes": 0
+      },
+      "children": []
+    }
+  }
+}
